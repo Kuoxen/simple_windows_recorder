@@ -1,0 +1,16 @@
+audio:
+  sample_rate: 44100
+  channels: 1
+  chunk_size: 1024
+  format: "int16"
+  
+recording:
+  output_dir: "./recordings"
+  file_prefix: "call_"
+  max_duration: 3600  # 1小时
+  
+upload:
+  enabled: true
+  url: "http://your-server.com/upload"
+  auto_delete: true
+  retry_times: 3
