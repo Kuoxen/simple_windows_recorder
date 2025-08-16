@@ -18,7 +18,13 @@ class DeviceManager:
         """获取回环设备（用于录制系统音频）"""
         if self.system == "Windows":
             for i, device in enumerate(self.devices):
-                if 'loopback' in device['name'].lower():
+                name = device['name'].lower()
+                # Windows回环设备关键词
+                windows_keywords = [
+                    'loopback', 'stereo mix', 'what u hear', 'wave out mix',
+                    '立体声混音', '混音', 'stereo input'
+                ]
+                if any(keyword in name for keyword in windows_keywords):
                     return i
         elif self.system == "Darwin":
             for i, device in enumerate(self.devices):
