@@ -34,13 +34,28 @@ def main():
     if mic_choice.isdigit():
         mic_device = input_devices[int(mic_choice)][0]
     
-    # 系统声音设备
-    loopback_device = device_manager.get_loopback_device()
-    if loopback_device:
-        print(f"\n系统声音设备: [{loopback_device}] {device_manager.devices[loopback_device]['name']}")
+    # 系统声音设备选择
+    print(f"\n请选择系统音频设备:")
+    system_candidates = []
+    for i, (idx, device) in enumerate(input_devices):
+        name = device['name'].lower()
+        if any(keyword in name for keyword in ['cable output', 'stereo mix', '立体声混音', '混音']):
+            system_candidates.append((idx, device))
+    
+    if system_candidates:
+        for i, (idx, device) in enumerate(system_candidates):
+            print(f"  {i}: [{idx}] {device['name']}")
+        
+        system_choice = input("输入序号 (回车使用第一个): ").strip()
+        if system_choice.isdigit() and int(system_choice) < len(system_candidates):
+            loopback_device = system_candidates[int(system_choice)][0]
+        else:
+            loopback_device = system_candidates[0][0]
+        
+        print(f"选择的系统音频设备: [{loopback_device}] {device_manager.devices[loopback_device]['name']}")
     else:
-        print("\n警告: 未找到系统声音回环设备!")
-        print("请确保启用了'立体声混音'或安装了虚拟音频设备")
+        print("未找到CABLE Output或立体声混音设备")
+        loopback_device = None
     
     # 开始测试
     recorder = AudioRecorder(settings)
