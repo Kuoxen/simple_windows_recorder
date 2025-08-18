@@ -53,5 +53,10 @@ recordings/
 *.mp3
 *.log
 
+# Build/Package files
+build/
+dist/
+*.spec
+
 # Config (if contains sensitive info)
 # config.yaml

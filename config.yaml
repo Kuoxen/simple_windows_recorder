@@ -11,6 +11,7 @@ recording:
   
 upload:
   enabled: true
-  url: "http://your-server.com/upload"
-  auto_delete: true
+  url: "http://localhost:8000/upload"
+  timeout: 60
+  auto_delete: false
   retry_times: 3

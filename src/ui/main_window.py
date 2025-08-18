@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import Settings
 from audio.device_manager import DeviceManager
 from audio.recorder import AudioRecorder
+from storage.uploader import FileUploader
 
 class RecorderUI:
     def __init__(self):
@@ -22,6 +23,7 @@ class RecorderUI:
             self.settings = Settings(config_path)
             self.device_manager = DeviceManager()
             self.recorder = AudioRecorder(self.settings)
+            self.uploader = FileUploader(self.settings)
             self.is_recording = False
             
             self.setup_ui()
@@ -241,6 +243,15 @@ class RecorderUI:
                     self.root.after(0, self.log_message, f"麦克风文件: {os.path.basename(new_mic_file)}")
                     self.root.after(0, self.log_message, f"系统音频文件: {os.path.basename(new_system_file)}")
                     self.root.after(0, self.log_message, f"录音时长: {result['duration']:.2f} 秒")
+                    
+                    # 上传文件
+                    call_info = {
+                        'agent_phone': self.agent_phone.get(),
+                        'customer_name': self.customer_name.get(),
+                        'customer_id': self.customer_id.get()
+                    }
+                    self.root.after(0, self.log_message, "开始上传文件...")
+                    self.uploader.upload_files(new_mic_file, new_system_file, call_info, self.upload_callback)
                 else:
                     self.root.after(0, self.log_message, "录音失败")
             except Exception as e:
@@ -259,6 +270,14 @@ class RecorderUI:
             self.record_btn.config(text="开始录音")
             self.status_var.set("就绪")
             self.status_label.config(foreground="green")
+    
+    def upload_callback(self, success, message):
+        """上传结果回调"""
+        self.root.after(0, self.log_message, message)
+        if success:
+            self.root.after(0, self.log_message, "✅ 文件上传成功")
+        else:
+            self.root.after(0, self.log_message, "❌ 文件上传失败")
     
     def log_message(self, message):
         try:
