@@ -23,10 +23,15 @@ def build_exe():
         f"--add-data=src{separator}src",           # 包含src目录
         "--hidden-import=tkinter",      # 确保包含tkinter
         "--hidden-import=tkinter.ttk",  # 确保包含ttk
+        "--hidden-import=requests",     # HTTP请求库
+        "--hidden-import=numpy",        # 数值计算库
+        "--hidden-import=sounddevice",  # 音频设备库
+        "--hidden-import=yaml",         # YAML解析库
         "--hidden-import=src.config.settings",     # 明确指定模块
         "--hidden-import=src.audio.recorder",      # 明确指定模块
         "--hidden-import=src.audio.device_manager", # 明确指定模块
         "--hidden-import=src.ui.main_window",      # 明确指定模块
+        "--hidden-import=src.storage.uploader",    # 上传模块
         "run_ui.py"                     # 主程序文件
     ]
     
