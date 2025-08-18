@@ -11,7 +11,9 @@ recording:
   
 upload:
   enabled: true
-  url: "http://localhost:8000/upload"
+  type: "oss_with_server"
+  token_url: "http://your-server.com/api/get-upload-token"
+  notify_url: "http://your-server.com/api/upload-complete"
   timeout: 60
   auto_delete: false
   retry_times: 3

@@ -80,9 +80,20 @@ class AudioRecorder:
     
     def _record_speaker(self, device=None):
         """录制扬声器回环"""
+        self.speaker_callback_count = 0
+        self.speaker_data_size = 0
+        
         def callback(indata, frames, time, status):
             if self.is_recording:
-                self.speaker_data.extend(indata[:, 0])
+                self.speaker_callback_count += 1
+                audio_chunk = indata[:, 0]
+                self.speaker_data.extend(audio_chunk)
+                self.speaker_data_size += len(audio_chunk)
+                
+                # 每100次callback输出一次日志
+                if self.speaker_callback_count % 100 == 0:
+                    volume = max(abs(audio_chunk)) if len(audio_chunk) > 0 else 0
+                    print(f"[DEBUG] 系统音频 callback #{self.speaker_callback_count}, 数据长度: {len(audio_chunk)}, 音量: {volume:.4f}, 总数据: {self.speaker_data_size}")
         
         # 如果没有指定设备，尝试自动查找loopback设备
         if device is None:
@@ -93,6 +104,8 @@ class AudioRecorder:
                 print("警告: 未找到loopback设备，将使用默认输入设备")
                 device = dm.get_default_input()
         
+        print(f"[DEBUG] 开始系统音频录制，设备ID: {device}")
+        
         try:
             with sd.InputStream(
                 device=device,
@@ -101,26 +114,38 @@ class AudioRecorder:
                 callback=callback,
                 blocksize=self.settings.audio['chunk_size']
             ):
+                print(f"[DEBUG] 系统音频流已启动")
                 while self.is_recording:
                     time.sleep(0.1)
+                print(f"[DEBUG] 系统音频录制结束，总 callback: {self.speaker_callback_count}, 总数据: {self.speaker_data_size}")
         except Exception as e:
-            print(f"扬声器录音错误: {e}")
+            print(f"[ERROR] 扬声器录音错误: {e}")
     
     def _save_audio(self, data, filename):
         """保存音频文件"""
+        print(f"[DEBUG] 尝试保存文件: {filename}, 数据长度: {len(data) if data else 0}")
+        
         if not data:
+            print(f"[ERROR] 数据为空，无法保存文件: {filename}")
             return None
             
         filepath = os.path.join(self.settings.recording['output_dir'], filename)
         
-        with wave.open(filepath, 'wb') as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(self.settings.audio['sample_rate'])
+        try:
+            with wave.open(filepath, 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(self.settings.audio['sample_rate'])
+                
+                # 转换为 int16
+                audio_data = np.array(data, dtype=np.float32)
+                audio_data = (audio_data * 32767).astype(np.int16)
+                wf.writeframes(audio_data.tobytes())
             
-            # 转换为 int16
-            audio_data = np.array(data, dtype=np.float32)
-            audio_data = (audio_data * 32767).astype(np.int16)
-            wf.writeframes(audio_data.tobytes())
-        
-        return filepath
+            file_size = os.path.getsize(filepath)
+            print(f"[DEBUG] 文件保存成功: {filepath}, 大小: {file_size} 字节")
+            return filepath
+            
+        except Exception as e:
+            print(f"[ERROR] 保存文件失败: {filename}, 错误: {e}")
+            return None

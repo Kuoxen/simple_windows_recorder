@@ -2,11 +2,17 @@ import requests
 import os
 import threading
 from datetime import datetime
+import oss2
 
 class FileUploader:
     def __init__(self, settings):
         self.settings = settings
         self.upload_config = settings.upload
+        self.oss_config = {
+            'endpoint': 'https://oss-cn-beijing.aliyuncs.com',
+            'bucket': 'rocksilicon-aliyun-oss-01',
+            'region': 'cn-beijing'
+        }
         
     def upload_files(self, mic_file, system_file, call_info, callback=None):
         """
@@ -34,56 +40,45 @@ class FileUploader:
     def _upload_worker(self, mic_file, system_file, call_info, callback):
         """上传工作线程"""
         try:
-            upload_url = self.upload_config.get('url')
-            if not upload_url:
-                raise Exception("未配置上传服务器地址")
+            # 1. 获取STS临时凭证
+            sts_token = self._get_sts_token(call_info)
+            if not sts_token:
+                raise Exception("获取上传凭证失败")
             
-            # 准备上传数据
-            files = {}
-            data = {
-                'timestamp': datetime.now().isoformat(),
-                'agent_phone': call_info.get('agent_phone', ''),
-                'customer_name': call_info.get('customer_name', ''),
-                'customer_id': call_info.get('customer_id', ''),
-            }
+            # 2. 创建OSS客户端
+            auth = oss2.StsAuth(
+                sts_token['access_key_id'],
+                sts_token['access_key_secret'],
+                sts_token['security_token']
+            )
+            bucket = oss2.Bucket(auth, self.oss_config['endpoint'], self.oss_config['bucket'])
             
-            # 添加文件
+            # 3. 上传文件
+            uploaded_files = []
+            
             if mic_file and os.path.exists(mic_file):
-                files['mic_file'] = open(mic_file, 'rb')
-                data['mic_filename'] = os.path.basename(mic_file)
+                key = self._generate_oss_key(mic_file, call_info, 'mic')
+                bucket.put_object_from_file(key, mic_file)
+                uploaded_files.append({'type': 'mic', 'key': key, 'file': mic_file})
             
             if system_file and os.path.exists(system_file):
-                files['system_file'] = open(system_file, 'rb')
-                data['system_filename'] = os.path.basename(system_file)
+                key = self._generate_oss_key(system_file, call_info, 'system')
+                bucket.put_object_from_file(key, system_file)
+                uploaded_files.append({'type': 'system', 'key': key, 'file': system_file})
             
-            # 发送请求
-            response = requests.post(
-                upload_url,
-                files=files,
-                data=data,
-                timeout=self.upload_config.get('timeout', 60)
-            )
+            # 4. 通知服务器上传完成
+            self._notify_upload_complete(uploaded_files, call_info)
             
-            # 关闭文件
-            for f in files.values():
-                f.close()
+            if callback:
+                callback(True, f"成功上传 {len(uploaded_files)} 个文件到OSS")
             
-            if response.status_code == 200:
-                result = response.json()
-                if callback:
-                    callback(True, f"上传成功: {result.get('message', '')}")
+            # 上传成功后删除本地文件
+            if self.upload_config.get('auto_delete', False):
+                self._delete_local_files(mic_file, system_file)
                 
-                # 上传成功后删除本地文件（如果配置了自动删除）
-                if self.upload_config.get('auto_delete', False):
-                    self._delete_local_files(mic_file, system_file)
-                    
-            else:
-                if callback:
-                    callback(False, f"上传失败: HTTP {response.status_code}")
-                    
         except Exception as e:
             if callback:
-                callback(False, f"上传错误: {str(e)}")
+                callback(False, f"OSS上传错误: {str(e)}")
     
     def _delete_local_files(self, *files):
         """删除本地文件"""
@@ -94,11 +89,63 @@ class FileUploader:
             except Exception as e:
                 print(f"删除文件失败 {file_path}: {e}")
     
+    def _get_sts_token(self, call_info):
+        """从服务器获取STS临时凭证"""
+        try:
+            token_url = self.upload_config.get('token_url')
+            if not token_url:
+                raise Exception("未配置凭证获取地址")
+            
+            response = requests.post(token_url, json={
+                'agent_phone': call_info.get('agent_phone', ''),
+                'customer_name': call_info.get('customer_name', ''),
+                'customer_id': call_info.get('customer_id', '')
+            }, timeout=10)
+            
+            if response.status_code == 200:
+                return response.json().get('credentials')
+            else:
+                raise Exception(f"HTTP {response.status_code}")
+                
+        except Exception as e:
+            print(f"获取STS凭证失败: {e}")
+            return None
+    
+    def _generate_oss_key(self, file_path, call_info, file_type):
+        """生成OSS对象键名"""
+        date_str = datetime.now().strftime('%Y/%m/%d')
+        agent_phone = call_info.get('agent_phone', 'unknown')
+        filename = os.path.basename(file_path)
+        
+        return f"recordings/{date_str}/{agent_phone}/{file_type}_{filename}"
+    
+    def _notify_upload_complete(self, uploaded_files, call_info):
+        """通知服务器上传完成"""
+        try:
+            notify_url = self.upload_config.get('notify_url')
+            if not notify_url:
+                return
+            
+            data = {
+                'timestamp': datetime.now().isoformat(),
+                'agent_phone': call_info.get('agent_phone', ''),
+                'customer_name': call_info.get('customer_name', ''),
+                'customer_id': call_info.get('customer_id', ''),
+                'files': [{'type': f['type'], 'oss_key': f['key']} for f in uploaded_files]
+            }
+            
+            requests.post(notify_url, json=data, timeout=10)
+            
+        except Exception as e:
+            print(f"通知服务器失败: {e}")
+    
     def test_connection(self):
         """测试服务器连接"""
         try:
-            test_url = self.upload_config.get('url', '').replace('/upload', '/health')
-            response = requests.get(test_url, timeout=5)
+            token_url = self.upload_config.get('token_url', '')
+            if not token_url:
+                return False
+            response = requests.get(token_url.replace('/get-upload-token', '/health'), timeout=5)
             return response.status_code == 200
         except:
             return False

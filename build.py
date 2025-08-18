@@ -17,7 +17,7 @@ def build_exe():
     cmd = [
         "pyinstaller",
         "--onefile",                    # 打包成单个文件
-        "--windowed",                   # 不显示控制台窗口
+        "--console",                    # 显示控制台窗口
         "--name=呼叫中心录音系统",        # 程序名称
         f"--add-data=config.yaml{separator}.",     # 包含配置文件
         f"--add-data=src{separator}src",           # 包含src目录
@@ -27,6 +27,7 @@ def build_exe():
         "--hidden-import=numpy",        # 数值计算库
         "--hidden-import=sounddevice",  # 音频设备库
         "--hidden-import=yaml",         # YAML解析库
+        "--hidden-import=oss2",         # 阿里云OSS SDK
         "--hidden-import=src.config.settings",     # 明确指定模块
         "--hidden-import=src.audio.recorder",      # 明确指定模块
         "--hidden-import=src.audio.device_manager", # 明确指定模块

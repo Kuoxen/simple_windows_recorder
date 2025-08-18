@@ -225,35 +225,44 @@ class RecorderUI:
                 self.root.after(0, self.update_recording_ui, False)
                 
                 if result:
-                    # 重命名文件
-                    old_mic_file = result['mic_file']
-                    old_system_file = result['speaker_file']
+                    # 检查文件是否存在
+                    old_mic_file = result.get('mic_file')
+                    old_system_file = result.get('speaker_file')
                     
-                    # 生成新文件名
-                    new_mic_file = os.path.join(os.path.dirname(old_mic_file), self.generate_filename("mic"))
-                    new_system_file = os.path.join(os.path.dirname(old_system_file), self.generate_filename("system"))
+                    new_mic_file = None
+                    new_system_file = None
                     
-                    # 重命名文件
-                    if os.path.exists(old_mic_file):
+                    # 处理麦克风文件
+                    if old_mic_file and os.path.exists(old_mic_file):
+                        new_mic_file = os.path.join(os.path.dirname(old_mic_file), self.generate_filename("mic"))
                         os.rename(old_mic_file, new_mic_file)
-                    if os.path.exists(old_system_file):
+                        self.root.after(0, self.log_message, f"麦克风文件: {os.path.basename(new_mic_file)}")
+                    else:
+                        self.root.after(0, self.log_message, "⚠️  麦克风录音失败")
+                    
+                    # 处理系统音频文件
+                    if old_system_file and os.path.exists(old_system_file):
+                        new_system_file = os.path.join(os.path.dirname(old_system_file), self.generate_filename("system"))
                         os.rename(old_system_file, new_system_file)
+                        self.root.after(0, self.log_message, f"系统音频文件: {os.path.basename(new_system_file)}")
+                    else:
+                        self.root.after(0, self.log_message, "⚠️  系统音频录音失败 - 请检查VB-Cable设置")
                     
-                    self.root.after(0, self.log_message, f"录音完成!")
-                    self.root.after(0, self.log_message, f"麦克风文件: {os.path.basename(new_mic_file)}")
-                    self.root.after(0, self.log_message, f"系统音频文件: {os.path.basename(new_system_file)}")
-                    self.root.after(0, self.log_message, f"录音时长: {result['duration']:.2f} 秒")
+                    self.root.after(0, self.log_message, f"录音完成! 时长: {result.get('duration', 0):.2f} 秒")
                     
-                    # 上传文件
-                    call_info = {
-                        'agent_phone': self.agent_phone.get(),
-                        'customer_name': self.customer_name.get(),
-                        'customer_id': self.customer_id.get()
-                    }
-                    self.root.after(0, self.log_message, "开始上传文件...")
-                    self.uploader.upload_files(new_mic_file, new_system_file, call_info, self.upload_callback)
+                    # 只有在有文件时才上传
+                    if new_mic_file or new_system_file:
+                        call_info = {
+                            'agent_phone': self.agent_phone.get(),
+                            'customer_name': self.customer_name.get(),
+                            'customer_id': self.customer_id.get()
+                        }
+                        self.root.after(0, self.log_message, "开始上传文件...")
+                        self.uploader.upload_files(new_mic_file, new_system_file, call_info, self.upload_callback)
+                    else:
+                        self.root.after(0, self.log_message, "❌ 没有文件可上传")
                 else:
-                    self.root.after(0, self.log_message, "录音失败")
+                    self.root.after(0, self.log_message, "❌ 录音失败 - 未能生成录音文件")
             except Exception as e:
                 self.is_recording = False
                 self.root.after(0, self.update_recording_ui, False)
