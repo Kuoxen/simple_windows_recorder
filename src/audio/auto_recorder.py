@@ -405,6 +405,25 @@ class AutoAudioRecorder:
         else:
             self._notify_status("⚠️ 系统音频数据为空")
         
+        # 自动上传文件
+        if (result.get('mic_success') or result.get('system_success')) and self.settings.upload.get('enabled', False):
+            self._notify_status("开始上传文件...")
+            try:
+                from ..storage.uploader import FileUploader
+                uploader = FileUploader(self.settings)
+                
+                def upload_callback(success, message):
+                    self._notify_status(message)
+                
+                uploader.upload_files(
+                    result.get('mic_file'),
+                    result.get('system_file'),
+                    self.call_info,
+                    upload_callback
+                )
+            except Exception as e:
+                self._notify_status(f"上传失败: {e}")
+        
         return result
     
     def _save_audio_file(self, data: list, filename: str) -> Optional[str]:
