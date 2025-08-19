@@ -161,6 +161,8 @@ class AutoAudioRecorder:
         sample_rate = self.settings.audio['sample_rate']
         chunk_size = self.settings.audio['chunk_size']
         
+        self._notify_status(f"启动音频流 - 采样率:{sample_rate}, 块大小:{chunk_size}")
+        
         # 麦克风流
         def mic_callback(indata, frames, time, status):
             if status:
@@ -177,7 +179,17 @@ class AutoAudioRecorder:
                     self.recording_mic_data.extend(audio_data)
                 
                 # 更新活动检测
-                self.activity_detector.update_mic_activity(audio_data)
+                is_active = self.activity_detector.update_mic_activity(audio_data)
+                
+                # 每100次回调输出一次调试信息
+                if hasattr(self, '_mic_callback_count'):
+                    self._mic_callback_count += 1
+                else:
+                    self._mic_callback_count = 1
+                
+                if self._mic_callback_count % 100 == 0:
+                    volume = np.max(np.abs(audio_data)) if len(audio_data) > 0 else 0
+                    self.logger.debug(f"麦克风 #{self._mic_callback_count}: 音量={volume:.4f}, 活跃={is_active}")
         
         # 系统音频流
         def system_callback(indata, frames, time, status):
@@ -195,7 +207,17 @@ class AutoAudioRecorder:
                     self.recording_system_data.extend(audio_data)
                 
                 # 更新活动检测
-                self.activity_detector.update_system_activity(audio_data)
+                is_active = self.activity_detector.update_system_activity(audio_data)
+                
+                # 每100次回调输出一次调试信息
+                if hasattr(self, '_system_callback_count'):
+                    self._system_callback_count += 1
+                else:
+                    self._system_callback_count = 1
+                
+                if self._system_callback_count % 100 == 0:
+                    volume = np.max(np.abs(audio_data)) if len(audio_data) > 0 else 0
+                    self.logger.debug(f"系统音频 #{self._system_callback_count}: 音量={volume:.4f}, 活跃={is_active}")
         
         # 启动流
         self.mic_stream = sd.InputStream(
@@ -218,6 +240,8 @@ class AutoAudioRecorder:
         
         self.mic_stream.start()
         self.system_stream.start()
+        
+        self._notify_status(f"✅ 音频流已启动 - 麦克风设备:{self.mic_device}, 系统音频设备:{self.system_device}")
     
     def _stop_audio_streams(self):
         """停止音频流"""
@@ -234,9 +258,21 @@ class AutoAudioRecorder:
     def _monitor_loop(self):
         """监听循环"""
         check_interval = self.auto_config.get('check_interval', 0.5)
+        loop_count = 0
+        
+        self._notify_status(f"监听循环已启动，检查间隔: {check_interval}秒")
         
         while self.is_monitoring:
             try:
+                loop_count += 1
+                
+                # 每10次循环输出一次状态
+                if loop_count % 20 == 0:  # 10秒输出一次
+                    status = self.activity_detector.get_status()
+                    self._notify_status(f"监听状态: 麦克风活跃={status.get('mic_active', False)}, "
+                                      f"系统音频活跃={status.get('system_active', False)}, "
+                                      f"静默时长={status.get('silence_duration', 0):.1f}s")
+                
                 if self.state == RecordingState.MONITORING:
                     # 检查是否应该开始录制
                     if self.activity_detector.should_start_recording():
@@ -252,6 +288,8 @@ class AutoAudioRecorder:
             except Exception as e:
                 self.logger.error(f"监听循环错误: {e}")
                 time.sleep(1.0)
+        
+        self._notify_status("监听循环已退出")
     
     def _start_recording(self):
         """开始录制"""
@@ -319,6 +357,8 @@ class AutoAudioRecorder:
         
         base_filename = '_'.join(filename_parts)
         
+        self._notify_status(f"正在保存录音文件: {base_filename}")
+        
         result = {
             'duration': (datetime.now() - self.recording_start_time).total_seconds(),
             'mic_file': None,
@@ -329,6 +369,7 @@ class AutoAudioRecorder:
         
         # 保存麦克风录音
         if self.recording_mic_data:
+            self._notify_status(f"保存麦克风数据: {len(self.recording_mic_data)} 个采样点")
             mic_file = self._save_audio_file(
                 self.recording_mic_data, 
                 f"mic_{base_filename}.wav"
@@ -336,9 +377,13 @@ class AutoAudioRecorder:
             if mic_file:
                 result['mic_file'] = mic_file
                 result['mic_success'] = True
+                self._notify_status(f"✅ 麦克风文件保存成功: {os.path.basename(mic_file)}")
+        else:
+            self._notify_status("⚠️ 麦克风数据为空")
         
         # 保存系统音频录音
         if self.recording_system_data:
+            self._notify_status(f"保存系统音频数据: {len(self.recording_system_data)} 个采样点")
             system_file = self._save_audio_file(
                 self.recording_system_data, 
                 f"system_{base_filename}.wav"
@@ -346,6 +391,9 @@ class AutoAudioRecorder:
             if system_file:
                 result['system_file'] = system_file
                 result['system_success'] = True
+                self._notify_status(f"✅ 系统音频文件保存成功: {os.path.basename(system_file)}")
+        else:
+            self._notify_status("⚠️ 系统音频数据为空")
         
         return result
     

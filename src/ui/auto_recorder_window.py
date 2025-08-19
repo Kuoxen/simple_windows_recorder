@@ -19,7 +19,7 @@ class AutoRecorderUI:
         self.root.geometry("700x650")
         
         # 配置日志
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         
         # 初始化组件
         try:
