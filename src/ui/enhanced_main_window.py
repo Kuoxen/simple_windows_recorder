@@ -15,7 +15,7 @@ from storage.uploader import FileUploader
 class EnhancedRecorderUI:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("呼叫中心录音系统 - 增强版")
+        self.root.title("岩硅智能音频采集器")
         self.root.geometry("600x500")
         
         # 配置日志

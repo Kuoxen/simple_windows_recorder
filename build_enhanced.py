@@ -8,15 +8,15 @@ import subprocess
 import sys
 
 def build_enhanced_exe():
-    print("开始打包增强版呼叫中心录音系统...")
+    print("开始打包增强版岩硅智能音频采集器...")
     
     separator = ":" if os.name != 'nt' else ";"
     
     cmd = [
         "pyinstaller",
         "--onefile",
-        "--windowed",  # 改为窗口模式，更专业
-        "--name=呼叫中心录音系统-增强版",
+        "--console",  # 显示控制台窗口，方便查看日志
+        "--name=岩硅智能音频采集器",  # 更改软件名称
         f"--add-data=config.yaml{separator}.",
         f"--add-data=src{separator}src",
         "--hidden-import=tkinter",
@@ -42,19 +42,20 @@ def build_enhanced_exe():
     
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print("✅ 增强版打包成功！")
+        print("✅ 岩硅智能音频采集器打包成功！")
         if os.name == 'nt':
-            print("📁 可执行文件: dist/呼叫中心录音系统-增强版.exe")
+            print("📁 可执行文件: dist/岩硅智能音频采集器.exe")
         else:
-            print("📁 可执行文件: dist/呼叫中心录音系统-增强版")
+            print("📁 可执行文件: dist/岩硅智能音频采集器")
         
         print("\n🚀 使用说明:")
         print("1. 将生成的exe文件复制到目标电脑")
         print("2. 确保目标电脑已安装VB-Cable或启用立体声混音")
-        print("3. 双击运行，程序会自动检测和推荐最佳设备")
+        print("3. 双击运行，会同时显示GUI界面和控制台日志")
+        print("4. 控制台窗口会显示详细的设备检测和调试信息")
         
     except subprocess.CalledProcessError as e:
-        print(f"❌ 打包失败: {e}")
+        print(f"❌ 岩硅智能音频采集器打包失败: {e}")
         print(f"错误输出: {e.stderr}")
         
     except FileNotFoundError:
