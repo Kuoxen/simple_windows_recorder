@@ -94,35 +94,49 @@ class EnhancedDeviceManager:
     
     def test_device_availability(self, device_id: int) -> bool:
         """测试设备是否可用（使用回调模式）"""
-        try:
-            import time
-            test_success = False
-            
-            def test_callback(indata, frames, time, status):
-                nonlocal test_success
-                test_success = True
-            
-            # 使用与实际录音相同的回调模式
-            with sd.InputStream(
-                device=device_id, 
-                channels=1, 
-                samplerate=44100, 
-                callback=test_callback,
-                blocksize=1024
-            ):
-                time.sleep(0.1)  # 短暂测试
-            
-            return True  # 只要能打开就认为可用
-            
-        except Exception as e:
-            # 过滤掉WDM-KS相关的错误，这些设备在回调模式下可能可用
-            error_msg = str(e).lower()
-            if 'wdm-ks' in error_msg or 'blocking api not supported' in error_msg:
-                self.logger.info(f"设备 {device_id} 使用WDM-KS驱动，跳过检测")
-                return True  # WDM-KS设备在回调模式下通常可用
-            
-            self.logger.warning(f"设备 {device_id} 不可用: {e}")
-            return False
+        import time
+        
+        # 尝试多种采样率
+        sample_rates = [44100, 48000, 22050, 16000, 8000]
+        
+        for samplerate in sample_rates:
+            try:
+                def test_callback(indata, frames, time, status):
+                    pass
+                
+                # 使用与实际录音相同的回调模式
+                with sd.InputStream(
+                    device=device_id, 
+                    channels=1, 
+                    samplerate=samplerate, 
+                    callback=test_callback,
+                    blocksize=1024
+                ):
+                    time.sleep(0.05)  # 更短的测试时间
+                
+                return True  # 成功打开
+                
+            except Exception as e:
+                error_msg = str(e).lower()
+                
+                # 过滤掉一些可以忽略的错误
+                if any(keyword in error_msg for keyword in [
+                    'wdm-ks', 'blocking api not supported', 
+                    'invalid sample rate'  # 采样率错误继续尝试
+                ]):
+                    continue  # 尝试下一个采样率
+                
+                # 其他错误认为设备不可用
+                if 'invalid device' in error_msg:
+                    self.logger.warning(f"设备 {device_id} 无效: {e}")
+                    return False
+                    
+                # 继续尝试其他采样率
+                continue
+        
+        # 所有采样率都失败
+        self.logger.warning(f"设备 {device_id} 不支持任何测试采样率")
+        return False
     
     def get_device_info(self, device_id: int) -> Optional[Dict]:
         """获取设备详细信息"""
@@ -142,13 +156,24 @@ class EnhancedDeviceManager:
         input_devices = self.get_input_devices()
         for i, device in input_devices:
             status = "✅" if self.test_device_availability(i) else "❌"
-            print(f"  {status} [{i}] {device['name']} - {device['max_input_channels']}ch")
+            # 显示更多信息：通道数、默认采样率、主机 API
+            channels = device['max_input_channels']
+            samplerate = int(device.get('default_samplerate', 0))
+            hostapi = device.get('hostapi', -1)
+            hostapi_name = sd.query_hostapis()[hostapi]['name'] if hostapi >= 0 else 'Unknown'
+            
+            print(f"  {status} [{i:2d}] {device['name'][:50]:<50} | {channels}ch | {samplerate:>5}Hz | {hostapi_name}")
         
         # 输出设备
         print("\n📤 输出设备:")
         output_devices = self.get_output_devices()
         for i, device in output_devices:
-            print(f"  [{i}] {device['name']} - {device['max_output_channels']}ch")
+            channels = device['max_output_channels']
+            samplerate = int(device.get('default_samplerate', 0))
+            hostapi = device.get('hostapi', -1)
+            hostapi_name = sd.query_hostapis()[hostapi]['name'] if hostapi >= 0 else 'Unknown'
+            
+            print(f"  [{i:2d}] {device['name'][:50]:<50} | {channels}ch | {samplerate:>5}Hz | {hostapi_name}")
         
         # 回环设备
         print("\n🔄 检测到的回环设备:")
@@ -156,7 +181,12 @@ class EnhancedDeviceManager:
         if loopback_devices:
             for device_id, device in loopback_devices:
                 status = "✅" if self.test_device_availability(device_id) else "❌"
-                print(f"  {status} [{device_id}] {device['name']}")
+                channels = device['max_input_channels']
+                samplerate = int(device.get('default_samplerate', 0))
+                hostapi = device.get('hostapi', -1)
+                hostapi_name = sd.query_hostapis()[hostapi]['name'] if hostapi >= 0 else 'Unknown'
+                
+                print(f"  {status} [{device_id:2d}] {device['name'][:45]:<45} | {channels}ch | {samplerate:>5}Hz | {hostapi_name}")
             
             best_loopback = self.get_best_loopback_device()
             if best_loopback is not None:
@@ -171,9 +201,22 @@ class EnhancedDeviceManager:
         if physical_mics:
             for device_id, device in physical_mics:
                 status = "✅" if self.test_device_availability(device_id) else "❌"
-                print(f"  {status} [{device_id}] {device['name']}")
+                channels = device['max_input_channels']
+                samplerate = int(device.get('default_samplerate', 0))
+                hostapi = device.get('hostapi', -1)
+                hostapi_name = sd.query_hostapis()[hostapi]['name'] if hostapi >= 0 else 'Unknown'
+                
+                print(f"  {status} [{device_id:2d}] {device['name'][:45]:<45} | {channels}ch | {samplerate:>5}Hz | {hostapi_name}")
         else:
             print("  ⚠️  未找到物理麦克风设备")
+            
+        # 显示主机 API 信息
+        print("\n🔌 主机 API 信息:")
+        hostapis = sd.query_hostapis()
+        for i, api in enumerate(hostapis):
+            default_input = api.get('default_input_device', -1)
+            default_output = api.get('default_output_device', -1)
+            print(f"  [{i}] {api['name']} - 输入:{default_input} 输出:{default_output} 设备数:{api['device_count']}")
     
     def get_default_input(self) -> Optional[int]:
         """获取默认输入设备"""
@@ -211,3 +254,16 @@ class EnhancedDeviceManager:
             recommendations['system_audio'] = best_loopback
         
         return recommendations
+    
+    def get_device_details(self, device_id: int) -> str:
+        """获取设备详细信息字符串"""
+        device = self.get_device_info(device_id)
+        if not device:
+            return "Unknown Device"
+            
+        channels = device.get('max_input_channels', 0)
+        samplerate = int(device.get('default_samplerate', 0))
+        hostapi = device.get('hostapi', -1)
+        hostapi_name = sd.query_hostapis()[hostapi]['name'] if hostapi >= 0 else 'Unknown'
+        
+        return f"{device['name']} | {channels}ch | {samplerate}Hz | {hostapi_name}"
