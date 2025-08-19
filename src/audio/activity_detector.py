@@ -62,16 +62,21 @@ class AudioActivityDetector:
         """判断是否应该开始录制"""
         current_time = time.time()
         
-        # 检查双路音频是否都活跃且持续足够时间
-        if (self.mic_active_start is not None and 
-            self.system_active_start is not None):
-            
-            mic_duration = current_time - self.mic_active_start
-            system_duration = current_time - self.system_active_start
-            
-            if (mic_duration >= self.start_duration and 
-                system_duration >= self.start_duration):
-                return True
+        # 检查是否有任意一路音频活跃超过阈值时间（降低同步要求）
+        mic_active_duration = 0
+        system_active_duration = 0
+        
+        if self.mic_active_start is not None:
+            mic_active_duration = current_time - self.mic_active_start
+        
+        if self.system_active_start is not None:
+            system_active_duration = current_time - self.system_active_start
+        
+        # 只要任意一路音频活跃超过阈值时间，就开始录制
+        max_duration = max(mic_active_duration, system_active_duration)
+        if max_duration >= self.start_duration:
+            self.logger.info(f"检测到音频活动，开始录制 - 麦克风:{mic_active_duration:.1f}s, 系统音频:{system_active_duration:.1f}s")
+            return True
         
         return False
     
