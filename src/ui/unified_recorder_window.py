@@ -53,8 +53,18 @@ class UnifiedRecorderUI:
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
+        # 共享的设备选择区域
+        self.setup_device_selection(main_frame)
+        
+        # 共享的通话信息区域
+        self.setup_call_info(main_frame)
+        
+        # 录制模式Tab区域
+        mode_frame = ttk.LabelFrame(main_frame, text="录制模式", padding="10")
+        mode_frame.pack(fill=tk.X, pady=(0, 10))
+        
         # 创建Tab控件
-        self.notebook = ttk.Notebook(main_frame)
+        self.notebook = ttk.Notebook(mode_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True)
         
         # 手动录制Tab
@@ -92,10 +102,9 @@ class UnifiedRecorderUI:
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     
-    def setup_manual_ui(self):
-        """设置手动录制界面"""
-        # 设备选择区域
-        device_frame = ttk.LabelFrame(self.manual_frame, text="设备选择", padding="10")
+    def setup_device_selection(self, parent):
+        """设置共享的设备选择区域"""
+        device_frame = ttk.LabelFrame(parent, text="设备选择", padding="10")
         device_frame.pack(fill=tk.X, pady=(0, 10))
         
         # 麦克风选择
@@ -116,9 +125,10 @@ class UnifiedRecorderUI:
         
         # 刷新按钮
         ttk.Button(device_frame, text="刷新设备", command=self.refresh_devices).pack(pady=(5, 0))
-        
-        # 通话信息区域
-        info_frame = ttk.LabelFrame(self.manual_frame, text="通话信息", padding="10")
+    
+    def setup_call_info(self, parent):
+        """设置共享的通话信息区域"""
+        info_frame = ttk.LabelFrame(parent, text="通话信息", padding="10")
         info_frame.pack(fill=tk.X, pady=(0, 10))
         
         # 坐席手机号
@@ -141,10 +151,12 @@ class UnifiedRecorderUI:
         ttk.Label(id_frame, text="客户ID:").pack(side=tk.LEFT)
         self.customer_id = tk.StringVar()
         ttk.Entry(id_frame, textvariable=self.customer_id, width=20).pack(side=tk.RIGHT, padx=(10, 0))
-        
+    
+    def setup_manual_ui(self):
+        """设置手动录制界面"""
         # 控制区域
         control_frame = ttk.Frame(self.manual_frame)
-        control_frame.pack(fill=tk.X, pady=(0, 10))
+        control_frame.pack(fill=tk.X, pady=10)
         
         self.manual_btn = ttk.Button(control_frame, text="开始录音", command=self.toggle_manual_recording)
         self.manual_btn.pack(side=tk.LEFT, padx=(0, 10))
@@ -160,29 +172,6 @@ class UnifiedRecorderUI:
     
     def setup_auto_ui(self):
         """设置自动录制界面"""
-        # 设备选择区域
-        device_frame = ttk.LabelFrame(self.auto_frame, text="设备选择", padding="10")
-        device_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        # 麦克风选择
-        mic_frame = tk.Frame(device_frame)
-        mic_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(mic_frame, text="麦克风设备:").pack(side=tk.LEFT)
-        self.auto_mic_var = tk.StringVar()
-        self.auto_mic_combo = ttk.Combobox(mic_frame, textvariable=self.auto_mic_var, width=50, state="readonly")
-        self.auto_mic_combo.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
-        
-        # 系统音频选择
-        system_frame = tk.Frame(device_frame)
-        system_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(system_frame, text="系统音频:").pack(side=tk.LEFT)
-        self.auto_system_var = tk.StringVar()
-        self.auto_system_combo = ttk.Combobox(system_frame, textvariable=self.auto_system_var, width=50, state="readonly")
-        self.auto_system_combo.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
-        
-        # 刷新按钮
-        ttk.Button(device_frame, text="刷新设备", command=self.refresh_devices).pack(pady=(5, 0))
-        
         # 自动录制配置区域
         config_frame = ttk.LabelFrame(self.auto_frame, text="自动录制配置", padding="10")
         config_frame.pack(fill=tk.X, pady=(0, 10))
@@ -234,34 +223,9 @@ class UnifiedRecorderUI:
         self.record_indicator = tk.Label(record_indicator_frame, text="●", fg="gray", font=("Arial", 16))
         self.record_indicator.pack(side=tk.LEFT, padx=(5, 0))
         
-        # 通话信息区域
-        info_frame = ttk.LabelFrame(self.auto_frame, text="通话信息", padding="10")
-        info_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        # 坐席手机号
-        agent_frame = tk.Frame(info_frame)
-        agent_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(agent_frame, text="坐席手机号:").pack(side=tk.LEFT)
-        self.auto_agent_phone = tk.StringVar()
-        ttk.Entry(agent_frame, textvariable=self.auto_agent_phone, width=20).pack(side=tk.RIGHT, padx=(10, 0))
-        
-        # 客户姓名
-        customer_frame = tk.Frame(info_frame)
-        customer_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(customer_frame, text="客户姓名:").pack(side=tk.LEFT)
-        self.auto_customer_name = tk.StringVar()
-        ttk.Entry(customer_frame, textvariable=self.auto_customer_name, width=20).pack(side=tk.RIGHT, padx=(10, 0))
-        
-        # 客户ID
-        id_frame = tk.Frame(info_frame)
-        id_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(id_frame, text="客户ID:").pack(side=tk.LEFT)
-        self.auto_customer_id = tk.StringVar()
-        ttk.Entry(id_frame, textvariable=self.auto_customer_id, width=20).pack(side=tk.RIGHT, padx=(10, 0))
-        
         # 控制区域
         control_frame = ttk.Frame(self.auto_frame)
-        control_frame.pack(fill=tk.X, pady=(0, 10))
+        control_frame.pack(fill=tk.X, pady=10)
         
         self.auto_btn = ttk.Button(control_frame, text="开始监听", command=self.toggle_auto_recording)
         self.auto_btn.pack(side=tk.LEFT, padx=(0, 10))
@@ -300,27 +264,21 @@ class UnifiedRecorderUI:
                 status = "✅" if available else "❌"
                 system_options.append(f"{status} [{device_id}] {device['name']}")
             
-            # 更新手动录制Tab的设备列表
+            # 更新共享的设备列表
             self.mic_combo['values'] = mic_options
             self.system_combo['values'] = system_options
-            
-            # 更新自动录制Tab的设备列表
-            self.auto_mic_combo['values'] = mic_options
-            self.auto_system_combo['values'] = system_options
             
             # 自动选择推荐设备
             if recommendations['microphone'] is not None:
                 for i, option in enumerate(mic_options):
                     if f"[{recommendations['microphone']}]" in option:
                         self.mic_combo.current(i)
-                        self.auto_mic_combo.current(i)
                         break
             
             if recommendations['system_audio'] is not None:
                 for i, option in enumerate(system_options):
                     if f"[{recommendations['system_audio']}]" in option:
                         self.system_combo.current(i)
-                        self.auto_system_combo.current(i)
                         break
             
             self.log_message(f"设备加载完成 - 麦克风:{len(mic_options)}个, 系统音频:{len(system_options)}个")
@@ -400,12 +358,12 @@ class UnifiedRecorderUI:
     def start_auto_monitoring(self):
         """开始自动监听"""
         # 校验坐席手机号
-        if not self.auto_agent_phone.get().strip():
+        if not self.agent_phone.get().strip():
             messagebox.showerror("错误", "请填写坐席手机号")
             return
         
-        mic_id = self.get_selected_device_id(self.auto_mic_var.get())
-        system_id = self.get_selected_device_id(self.auto_system_var.get())
+        mic_id = self.get_selected_device_id(self.mic_var.get())
+        system_id = self.get_selected_device_id(self.system_var.get())
         
         if mic_id is None:
             messagebox.showerror("错误", "请选择可用的麦克风设备")
@@ -418,9 +376,9 @@ class UnifiedRecorderUI:
         # 设置设备和通话信息
         self.auto_recorder.set_devices(mic_id, system_id)
         self.auto_recorder.set_call_info(
-            self.auto_agent_phone.get(),
-            self.auto_customer_name.get(),
-            self.auto_customer_id.get()
+            self.agent_phone.get(),
+            self.customer_name.get(),
+            self.customer_id.get()
         )
         
         def monitor_thread():
