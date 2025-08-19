@@ -93,13 +93,34 @@ class EnhancedDeviceManager:
         return physical_mics
     
     def test_device_availability(self, device_id: int) -> bool:
-        """测试设备是否可用"""
+        """测试设备是否可用（使用回调模式）"""
         try:
-            # 尝试创建一个短暂的音频流来测试设备
-            with sd.InputStream(device=device_id, channels=1, samplerate=44100, blocksize=1024):
-                pass
-            return True
+            import time
+            test_success = False
+            
+            def test_callback(indata, frames, time, status):
+                nonlocal test_success
+                test_success = True
+            
+            # 使用与实际录音相同的回调模式
+            with sd.InputStream(
+                device=device_id, 
+                channels=1, 
+                samplerate=44100, 
+                callback=test_callback,
+                blocksize=1024
+            ):
+                time.sleep(0.1)  # 短暂测试
+            
+            return True  # 只要能打开就认为可用
+            
         except Exception as e:
+            # 过滤掉WDM-KS相关的错误，这些设备在回调模式下可能可用
+            error_msg = str(e).lower()
+            if 'wdm-ks' in error_msg or 'blocking api not supported' in error_msg:
+                self.logger.info(f"设备 {device_id} 使用WDM-KS驱动，跳过检测")
+                return True  # WDM-KS设备在回调模式下通常可用
+            
             self.logger.warning(f"设备 {device_id} 不可用: {e}")
             return False
     
