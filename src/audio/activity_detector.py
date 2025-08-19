@@ -39,8 +39,7 @@ class AudioActivityDetector:
             if self.mic_active_start is None:
                 self.mic_active_start = current_time
             self.last_activity_time = current_time
-        else:
-            self.mic_active_start = None
+        # 不再立即重置，允许短暂停顿
         
         return is_active
     
@@ -53,8 +52,7 @@ class AudioActivityDetector:
             if self.system_active_start is None:
                 self.system_active_start = current_time
             self.last_activity_time = current_time
-        else:
-            self.system_active_start = None
+        # 不再立即重置，允许短暂停顿
         
         return is_active
     
@@ -62,7 +60,14 @@ class AudioActivityDetector:
         """判断是否应该开始录制"""
         current_time = time.time()
         
-        # 检查是否有任意一路音频活跃超过阈值时间（降低同步要求）
+        # 检查是否需要重置活跃状态（静默超过5秒才重置）
+        if self.last_activity_time is not None:
+            silence_duration = current_time - self.last_activity_time
+            if silence_duration > 5.0:  # 5秒静默才重置
+                self.mic_active_start = None
+                self.system_active_start = None
+        
+        # 检查是否有任意一路音频活跃超过阈值时间
         mic_active_duration = 0
         system_active_duration = 0
         
