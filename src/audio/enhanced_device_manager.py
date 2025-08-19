@@ -11,6 +11,15 @@ class EnhancedDeviceManager:
         self.system = platform.system()
         self.logger = logging.getLogger(__name__)
         
+    def _get_hostapi_name(self, hostapi_id: int) -> str:
+        """安全获取主机API名称"""
+        try:
+            if hostapi_id >= 0:
+                return sd.query_hostapis()[hostapi_id]['name']
+            return 'Unknown'
+        except:
+            return f'API-{hostapi_id}'
+        
     def get_input_devices(self) -> List[Tuple[int, Dict]]:
         """获取输入设备（麦克风）"""
         return [(i, d) for i, d in enumerate(self.devices) if d['max_input_channels'] > 0]
@@ -160,7 +169,7 @@ class EnhancedDeviceManager:
             channels = device['max_input_channels']
             samplerate = int(device.get('default_samplerate', 0))
             hostapi = device.get('hostapi', -1)
-            hostapi_name = sd.query_hostapis()[hostapi]['name'] if hostapi >= 0 else 'Unknown'
+            hostapi_name = self._get_hostapi_name(hostapi)
             
             print(f"  {status} [{i:2d}] {device['name'][:50]:<50} | {channels}ch | {samplerate:>5}Hz | {hostapi_name}")
         
@@ -171,7 +180,7 @@ class EnhancedDeviceManager:
             channels = device['max_output_channels']
             samplerate = int(device.get('default_samplerate', 0))
             hostapi = device.get('hostapi', -1)
-            hostapi_name = sd.query_hostapis()[hostapi]['name'] if hostapi >= 0 else 'Unknown'
+            hostapi_name = self._get_hostapi_name(hostapi)
             
             print(f"  [{i:2d}] {device['name'][:50]:<50} | {channels}ch | {samplerate:>5}Hz | {hostapi_name}")
         
@@ -184,7 +193,7 @@ class EnhancedDeviceManager:
                 channels = device['max_input_channels']
                 samplerate = int(device.get('default_samplerate', 0))
                 hostapi = device.get('hostapi', -1)
-                hostapi_name = sd.query_hostapis()[hostapi]['name'] if hostapi >= 0 else 'Unknown'
+                hostapi_name = self._get_hostapi_name(hostapi)
                 
                 print(f"  {status} [{device_id:2d}] {device['name'][:45]:<45} | {channels}ch | {samplerate:>5}Hz | {hostapi_name}")
             
@@ -204,7 +213,7 @@ class EnhancedDeviceManager:
                 channels = device['max_input_channels']
                 samplerate = int(device.get('default_samplerate', 0))
                 hostapi = device.get('hostapi', -1)
-                hostapi_name = sd.query_hostapis()[hostapi]['name'] if hostapi >= 0 else 'Unknown'
+                hostapi_name = self._get_hostapi_name(hostapi)
                 
                 print(f"  {status} [{device_id:2d}] {device['name'][:45]:<45} | {channels}ch | {samplerate:>5}Hz | {hostapi_name}")
         else:
@@ -212,11 +221,15 @@ class EnhancedDeviceManager:
             
         # 显示主机 API 信息
         print("\n🔌 主机 API 信息:")
-        hostapis = sd.query_hostapis()
-        for i, api in enumerate(hostapis):
-            default_input = api.get('default_input_device', -1)
-            default_output = api.get('default_output_device', -1)
-            print(f"  [{i}] {api['name']} - 输入:{default_input} 输出:{default_output} 设备数:{api['device_count']}")
+        try:
+            hostapis = sd.query_hostapis()
+            for i, api in enumerate(hostapis):
+                default_input = api.get('default_input_device', -1)
+                default_output = api.get('default_output_device', -1)
+                device_count = api.get('device_count', len([d for d in self.devices if d.get('hostapi') == i]))
+                print(f"  [{i}] {api.get('name', 'Unknown')} - 输入:{default_input} 输出:{default_output} 设备数:{device_count}")
+        except Exception as e:
+            print(f"  ⚠️  获取主机 API 信息失败: {e}")
     
     def get_default_input(self) -> Optional[int]:
         """获取默认输入设备"""
@@ -264,6 +277,6 @@ class EnhancedDeviceManager:
         channels = device.get('max_input_channels', 0)
         samplerate = int(device.get('default_samplerate', 0))
         hostapi = device.get('hostapi', -1)
-        hostapi_name = sd.query_hostapis()[hostapi]['name'] if hostapi >= 0 else 'Unknown'
+        hostapi_name = self._get_hostapi_name(hostapi)
         
         return f"{device['name']} | {channels}ch | {samplerate}Hz | {hostapi_name}"
