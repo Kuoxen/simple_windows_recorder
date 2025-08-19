@@ -27,6 +27,7 @@ def build_exe():
         "--hidden-import=numpy",        # 数值计算库
         "--hidden-import=sounddevice",  # 音频设备库
         "--hidden-import=yaml",         # YAML解析库
+        "--collect-all=oss2",           # 收集oss2的所有模块和依赖
         "--hidden-import=oss2",         # 阿里云OSS SDK
         "--hidden-import=src.config.settings",     # 明确指定模块
         "--hidden-import=src.audio.recorder",      # 明确指定模块
