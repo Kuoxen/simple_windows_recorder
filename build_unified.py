@@ -1,52 +1,69 @@
 #!/usr/bin/env python3
 """
-统一录制系统打包脚本
+统一版打包脚本
 """
 
-import PyInstaller.__main__
 import os
+import subprocess
 import sys
 
-def build_unified():
-    """打包统一录制系统"""
+def build_unified_exe():
+    print("开始打包统一版智能录音系统...")
     
-    # 获取项目根目录
-    project_root = os.path.dirname(os.path.abspath(__file__))
+    separator = ":" if os.name != 'nt' else ";"
     
-    # 打包参数
-    args = [
-        'run_unified.py',
-        '--name=岩硅智能音频采集器-统一版',
-        '--windowed',
-        '--onefile',
-        '--icon=icon.ico' if os.path.exists('icon.ico') else '',
-        f'--add-data={os.path.join(project_root, "config.yaml")};.',
-        f'--add-data={os.path.join(project_root, "src")};src',
-        '--hidden-import=sounddevice',
-        '--hidden-import=numpy',
-        '--hidden-import=wave',
-        '--hidden-import=yaml',
-        '--hidden-import=requests',
-        '--hidden-import=oss2',
-        '--clean',
-        '--noconfirm'
+    cmd = [
+        "pyinstaller",
+        "--onefile",
+        "--console",
+        "--name=智能录音系统-统一版",
+        f"--add-data=config.yaml{separator}.",
+        f"--add-data=src{separator}src",
+        "--hidden-import=tkinter",
+        "--hidden-import=tkinter.ttk",
+        "--hidden-import=requests",
+        "--hidden-import=numpy",
+        "--hidden-import=sounddevice",
+        "--hidden-import=yaml",
+        "--hidden-import=oss2",
+        "--hidden-import=logging",
+        "--hidden-import=src.config.settings",
+        "--hidden-import=src.audio.recorder",
+        "--hidden-import=src.audio.device_manager",
+        "--hidden-import=src.ui.main_window",
+        "--hidden-import=src.storage.uploader",
+        "--hidden-import=src.audio.enhanced_device_manager",
+        "--hidden-import=src.audio.enhanced_recorder", 
+        "--hidden-import=src.ui.enhanced_main_window",
+        "--hidden-import=src.audio.circular_buffer",
+        "--hidden-import=src.audio.activity_detector",
+        "--hidden-import=src.audio.auto_recorder",
+        "--hidden-import=src.ui.auto_recorder_window",
+        "--hidden-import=src.ui.unified_recorder_window",
+        "run_unified.py"
     ]
     
-    # 过滤空参数
-    args = [arg for arg in args if arg]
-    
-    print("开始打包统一录制系统...")
-    print(f"参数: {args}")
-    
     try:
-        PyInstaller.__main__.run(args)
-        print("✅ 打包完成！")
-        print("📁 可执行文件位于 dist/ 目录")
-    except Exception as e:
-        print(f"❌ 打包失败: {e}")
-        return False
-    
-    return True
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        print("✅ 智能录音系统-统一版打包成功！")
+        if os.name == 'nt':
+            print("📁 可执行文件: dist/智能录音系统-统一版.exe")
+        else:
+            print("📁 可执行文件: dist/智能录音系统-统一版")
+        
+        print("\n🚀 使用说明:")
+        print("1. 将生成的exe文件复制到目标电脑")
+        print("2. 确保目标电脑已安装VB-Cable或启用立体声混音")
+        print("3. 双击运行，可在手动和自动录制模式间切换")
+        print("4. 控制台窗口会显示详细的设备检测和调试信息")
+        
+    except subprocess.CalledProcessError as e:
+        print(f"❌ 智能录音系统-统一版打包失败: {e}")
+        print(f"错误输出: {e.stderr}")
+        
+    except FileNotFoundError:
+        print("❌ 未找到 pyinstaller")
+        print("请先安装: pip install pyinstaller")
 
 if __name__ == "__main__":
-    build_unified()
+    build_unified_exe()
