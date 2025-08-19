@@ -409,7 +409,7 @@ class AutoAudioRecorder:
         if (result.get('mic_success') or result.get('system_success')) and self.settings.upload.get('enabled', False):
             self._notify_status("开始上传文件...")
             try:
-                from ..storage.uploader import FileUploader
+                from storage.uploader import FileUploader
                 uploader = FileUploader(self.settings)
                 
                 def upload_callback(success, message):
