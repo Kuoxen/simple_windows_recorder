@@ -53,20 +53,49 @@ class UnifiedRecorderUI:
         main_frame = ttk.Frame(self.root, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
-        # 模式选择区域
-        mode_frame = ttk.LabelFrame(main_frame, text="录制模式", padding="10")
-        mode_frame.pack(fill=tk.X, pady=(0, 10))
+        # 创建Tab控件
+        self.notebook = ttk.Notebook(main_frame)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
         
-        mode_switch_frame = tk.Frame(mode_frame)
-        mode_switch_frame.pack(fill=tk.X)
+        # 手动录制Tab
+        self.manual_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.manual_frame, text="手动录制")
         
-        ttk.Radiobutton(mode_switch_frame, text="手动录制", variable=self.is_auto_mode, 
-                       value=False, command=self.on_mode_changed).pack(side=tk.LEFT, padx=(0, 20))
-        ttk.Radiobutton(mode_switch_frame, text="自动录制", variable=self.is_auto_mode, 
-                       value=True, command=self.on_mode_changed).pack(side=tk.LEFT)
+        # 自动录制Tab
+        self.auto_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.auto_frame, text="自动录制")
         
+        # 设置Tab切换回调
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
+        
+        # 设置手动录制界面
+        self.setup_manual_ui()
+        
+        # 设置自动录制界面
+        self.setup_auto_ui()
+        
+
+        
+
+        
+        # 日志区域（共享）
+        log_frame = ttk.LabelFrame(main_frame, text="系统日志", padding="10")
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        
+        text_frame = tk.Frame(log_frame)
+        text_frame.pack(fill=tk.BOTH, expand=True)
+        
+        self.log_text = tk.Text(text_frame, height=8, width=70)
+        scrollbar = ttk.Scrollbar(text_frame, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=scrollbar.set)
+        
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    
+    def setup_manual_ui(self):
+        """设置手动录制界面"""
         # 设备选择区域
-        device_frame = ttk.LabelFrame(main_frame, text="设备选择", padding="10")
+        device_frame = ttk.LabelFrame(self.manual_frame, text="设备选择", padding="10")
         device_frame.pack(fill=tk.X, pady=(0, 10))
         
         # 麦克风选择
@@ -88,59 +117,8 @@ class UnifiedRecorderUI:
         # 刷新按钮
         ttk.Button(device_frame, text="刷新设备", command=self.refresh_devices).pack(pady=(5, 0))
         
-        # 自动录制配置区域
-        self.auto_config_frame = ttk.LabelFrame(main_frame, text="自动录制配置", padding="10")
-        self.auto_config_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        # 音量阈值
-        threshold_frame = tk.Frame(self.auto_config_frame)
-        threshold_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(threshold_frame, text="音量阈值:").pack(side=tk.LEFT)
-        self.threshold_var = tk.DoubleVar(value=self.settings.auto_recording.get('volume_threshold', 0.015))
-        threshold_scale = ttk.Scale(threshold_frame, from_=0.005, to=0.1, variable=self.threshold_var, 
-                                  orient=tk.HORIZONTAL, command=self.on_threshold_changed)
-        threshold_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 10))
-        self.threshold_label = ttk.Label(threshold_frame, text=f"{self.threshold_var.get():.3f}")
-        self.threshold_label.pack(side=tk.RIGHT)
-        
-        # 静默时长
-        silence_frame = tk.Frame(self.auto_config_frame)
-        silence_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(silence_frame, text="静默时长(秒):").pack(side=tk.LEFT)
-        self.silence_var = tk.DoubleVar(value=self.settings.auto_recording.get('end_silence_duration', 12.0))
-        silence_scale = ttk.Scale(silence_frame, from_=5.0, to=30.0, variable=self.silence_var,
-                                orient=tk.HORIZONTAL, command=self.on_silence_changed)
-        silence_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 10))
-        self.silence_label = ttk.Label(silence_frame, text=f"{self.silence_var.get():.1f}s")
-        self.silence_label.pack(side=tk.RIGHT)
-        
-        # 实时状态指示器（仅自动模式）
-        self.indicators_frame = tk.Frame(self.auto_config_frame)
-        self.indicators_frame.pack(fill=tk.X, pady=(10, 0))
-        
-        # 麦克风活动指示器
-        mic_indicator_frame = tk.Frame(self.indicators_frame)
-        mic_indicator_frame.pack(side=tk.LEFT, padx=(0, 20))
-        ttk.Label(mic_indicator_frame, text="麦克风:").pack(side=tk.LEFT)
-        self.mic_indicator = tk.Label(mic_indicator_frame, text="●", fg="gray", font=("Arial", 16))
-        self.mic_indicator.pack(side=tk.LEFT, padx=(5, 0))
-        
-        # 系统音频活动指示器
-        system_indicator_frame = tk.Frame(self.indicators_frame)
-        system_indicator_frame.pack(side=tk.LEFT, padx=(0, 20))
-        ttk.Label(system_indicator_frame, text="系统音频:").pack(side=tk.LEFT)
-        self.system_indicator = tk.Label(system_indicator_frame, text="●", fg="gray", font=("Arial", 16))
-        self.system_indicator.pack(side=tk.LEFT, padx=(5, 0))
-        
-        # 录制状态指示器
-        record_indicator_frame = tk.Frame(self.indicators_frame)
-        record_indicator_frame.pack(side=tk.LEFT)
-        ttk.Label(record_indicator_frame, text="录制:").pack(side=tk.LEFT)
-        self.record_indicator = tk.Label(record_indicator_frame, text="●", fg="gray", font=("Arial", 16))
-        self.record_indicator.pack(side=tk.LEFT, padx=(5, 0))
-        
         # 通话信息区域
-        info_frame = ttk.LabelFrame(main_frame, text="通话信息", padding="10")
+        info_frame = ttk.LabelFrame(self.manual_frame, text="通话信息", padding="10")
         info_frame.pack(fill=tk.X, pady=(0, 10))
         
         # 坐席手机号
@@ -165,50 +143,141 @@ class UnifiedRecorderUI:
         ttk.Entry(id_frame, textvariable=self.customer_id, width=20).pack(side=tk.RIGHT, padx=(10, 0))
         
         # 控制区域
-        control_frame = ttk.Frame(main_frame)
+        control_frame = ttk.Frame(self.manual_frame)
         control_frame.pack(fill=tk.X, pady=(0, 10))
         
-        self.control_btn = ttk.Button(control_frame, text="开始录音", command=self.toggle_recording)
-        self.control_btn.pack(side=tk.LEFT, padx=(0, 10))
+        self.manual_btn = ttk.Button(control_frame, text="开始录音", command=self.toggle_manual_recording)
+        self.manual_btn.pack(side=tk.LEFT, padx=(0, 10))
         
         # 状态显示
-        self.status_var = tk.StringVar(value="就绪")
-        self.status_label = ttk.Label(control_frame, textvariable=self.status_var, foreground="green")
-        self.status_label.pack(side=tk.LEFT, padx=(0, 10))
+        self.manual_status_var = tk.StringVar(value="就绪")
+        self.manual_status_label = ttk.Label(control_frame, textvariable=self.manual_status_var, foreground="green")
+        self.manual_status_label.pack(side=tk.LEFT, padx=(0, 10))
         
         # 时长显示
         self.duration_var = tk.StringVar(value="00:00")
         ttk.Label(control_frame, textvariable=self.duration_var).pack(side=tk.LEFT)
-        
-        # 日志区域
-        log_frame = ttk.LabelFrame(main_frame, text="系统日志", padding="10")
-        log_frame.pack(fill=tk.BOTH, expand=True)
-        
-        text_frame = tk.Frame(log_frame)
-        text_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.log_text = tk.Text(text_frame, height=12, width=70)
-        scrollbar = ttk.Scrollbar(text_frame, orient="vertical", command=self.log_text.yview)
-        self.log_text.configure(yscrollcommand=scrollbar.set)
-        
-        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # 初始化界面状态
-        self.on_mode_changed()
     
-    def on_mode_changed(self):
-        """模式切换回调"""
-        if self.is_auto_mode.get():
-            # 自动录制模式
-            self.auto_config_frame.pack(fill=tk.X, pady=(0, 10), before=self.auto_config_frame.master.children[list(self.auto_config_frame.master.children.keys())[2]])
-            self.control_btn.config(text="开始监听")
-            self.log_message("切换到自动录制模式")
-        else:
-            # 手动录制模式
-            self.auto_config_frame.pack_forget()
-            self.control_btn.config(text="开始录音")
+    def setup_auto_ui(self):
+        """设置自动录制界面"""
+        # 设备选择区域
+        device_frame = ttk.LabelFrame(self.auto_frame, text="设备选择", padding="10")
+        device_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # 麦克风选择
+        mic_frame = tk.Frame(device_frame)
+        mic_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(mic_frame, text="麦克风设备:").pack(side=tk.LEFT)
+        self.auto_mic_var = tk.StringVar()
+        self.auto_mic_combo = ttk.Combobox(mic_frame, textvariable=self.auto_mic_var, width=50, state="readonly")
+        self.auto_mic_combo.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
+        
+        # 系统音频选择
+        system_frame = tk.Frame(device_frame)
+        system_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(system_frame, text="系统音频:").pack(side=tk.LEFT)
+        self.auto_system_var = tk.StringVar()
+        self.auto_system_combo = ttk.Combobox(system_frame, textvariable=self.auto_system_var, width=50, state="readonly")
+        self.auto_system_combo.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
+        
+        # 刷新按钮
+        ttk.Button(device_frame, text="刷新设备", command=self.refresh_devices).pack(pady=(5, 0))
+        
+        # 自动录制配置区域
+        config_frame = ttk.LabelFrame(self.auto_frame, text="自动录制配置", padding="10")
+        config_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # 音量阈值
+        threshold_frame = tk.Frame(config_frame)
+        threshold_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(threshold_frame, text="音量阈值:").pack(side=tk.LEFT)
+        self.threshold_var = tk.DoubleVar(value=self.settings.auto_recording.get('volume_threshold', 0.015))
+        threshold_scale = ttk.Scale(threshold_frame, from_=0.005, to=0.1, variable=self.threshold_var, 
+                                  orient=tk.HORIZONTAL, command=self.on_threshold_changed)
+        threshold_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 10))
+        self.threshold_label = ttk.Label(threshold_frame, text=f"{self.threshold_var.get():.3f}")
+        self.threshold_label.pack(side=tk.RIGHT)
+        
+        # 静默时长
+        silence_frame = tk.Frame(config_frame)
+        silence_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(silence_frame, text="静默时长(秒):").pack(side=tk.LEFT)
+        self.silence_var = tk.DoubleVar(value=self.settings.auto_recording.get('end_silence_duration', 12.0))
+        silence_scale = ttk.Scale(silence_frame, from_=5.0, to=30.0, variable=self.silence_var,
+                                orient=tk.HORIZONTAL, command=self.on_silence_changed)
+        silence_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(10, 10))
+        self.silence_label = ttk.Label(silence_frame, text=f"{self.silence_var.get():.1f}s")
+        self.silence_label.pack(side=tk.RIGHT)
+        
+        # 实时状态指示器
+        indicators_frame = tk.Frame(config_frame)
+        indicators_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        # 麦克风活动指示器
+        mic_indicator_frame = tk.Frame(indicators_frame)
+        mic_indicator_frame.pack(side=tk.LEFT, padx=(0, 20))
+        ttk.Label(mic_indicator_frame, text="麦克风:").pack(side=tk.LEFT)
+        self.mic_indicator = tk.Label(mic_indicator_frame, text="●", fg="gray", font=("Arial", 16))
+        self.mic_indicator.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 系统音频活动指示器
+        system_indicator_frame = tk.Frame(indicators_frame)
+        system_indicator_frame.pack(side=tk.LEFT, padx=(0, 20))
+        ttk.Label(system_indicator_frame, text="系统音频:").pack(side=tk.LEFT)
+        self.system_indicator = tk.Label(system_indicator_frame, text="●", fg="gray", font=("Arial", 16))
+        self.system_indicator.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 录制状态指示器
+        record_indicator_frame = tk.Frame(indicators_frame)
+        record_indicator_frame.pack(side=tk.LEFT)
+        ttk.Label(record_indicator_frame, text="录制:").pack(side=tk.LEFT)
+        self.record_indicator = tk.Label(record_indicator_frame, text="●", fg="gray", font=("Arial", 16))
+        self.record_indicator.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # 通话信息区域
+        info_frame = ttk.LabelFrame(self.auto_frame, text="通话信息", padding="10")
+        info_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # 坐席手机号
+        agent_frame = tk.Frame(info_frame)
+        agent_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(agent_frame, text="坐席手机号:").pack(side=tk.LEFT)
+        self.auto_agent_phone = tk.StringVar()
+        ttk.Entry(agent_frame, textvariable=self.auto_agent_phone, width=20).pack(side=tk.RIGHT, padx=(10, 0))
+        
+        # 客户姓名
+        customer_frame = tk.Frame(info_frame)
+        customer_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(customer_frame, text="客户姓名:").pack(side=tk.LEFT)
+        self.auto_customer_name = tk.StringVar()
+        ttk.Entry(customer_frame, textvariable=self.auto_customer_name, width=20).pack(side=tk.RIGHT, padx=(10, 0))
+        
+        # 客户ID
+        id_frame = tk.Frame(info_frame)
+        id_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(id_frame, text="客户ID:").pack(side=tk.LEFT)
+        self.auto_customer_id = tk.StringVar()
+        ttk.Entry(id_frame, textvariable=self.auto_customer_id, width=20).pack(side=tk.RIGHT, padx=(10, 0))
+        
+        # 控制区域
+        control_frame = ttk.Frame(self.auto_frame)
+        control_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        self.auto_btn = ttk.Button(control_frame, text="开始监听", command=self.toggle_auto_recording)
+        self.auto_btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # 状态显示
+        self.auto_status_var = tk.StringVar(value="就绪")
+        self.auto_status_label = ttk.Label(control_frame, textvariable=self.auto_status_var, foreground="green")
+        self.auto_status_label.pack(side=tk.LEFT)
+    
+    def on_tab_changed(self, event):
+        """处理Tab切换事件"""
+        selected_tab = self.notebook.index(self.notebook.select())
+        if selected_tab == 0:
             self.log_message("切换到手动录制模式")
+        else:
+            self.log_message("切换到自动录制模式")
     
     def load_devices(self):
         """加载设备列表"""
@@ -223,8 +292,6 @@ class UnifiedRecorderUI:
                 status = "✅" if available else "❌"
                 mic_options.append(f"{status} [{device_id}] {device['name']}")
             
-            self.mic_combo['values'] = mic_options
-            
             # 加载系统音频设备
             loopback_devices = self.device_manager.get_loopback_devices()
             system_options = []
@@ -233,19 +300,27 @@ class UnifiedRecorderUI:
                 status = "✅" if available else "❌"
                 system_options.append(f"{status} [{device_id}] {device['name']}")
             
+            # 更新手动录制Tab的设备列表
+            self.mic_combo['values'] = mic_options
             self.system_combo['values'] = system_options
+            
+            # 更新自动录制Tab的设备列表
+            self.auto_mic_combo['values'] = mic_options
+            self.auto_system_combo['values'] = system_options
             
             # 自动选择推荐设备
             if recommendations['microphone'] is not None:
                 for i, option in enumerate(mic_options):
                     if f"[{recommendations['microphone']}]" in option:
                         self.mic_combo.current(i)
+                        self.auto_mic_combo.current(i)
                         break
             
             if recommendations['system_audio'] is not None:
                 for i, option in enumerate(system_options):
                     if f"[{recommendations['system_audio']}]" in option:
                         self.system_combo.current(i)
+                        self.auto_system_combo.current(i)
                         break
             
             self.log_message(f"设备加载完成 - 麦克风:{len(mic_options)}个, 系统音频:{len(system_options)}个")
@@ -268,23 +343,27 @@ class UnifiedRecorderUI:
         except:
             return None
     
-    def toggle_recording(self):
-        """切换录制状态"""
-        if self.is_auto_mode.get():
-            # 自动录制模式
-            if not self.is_monitoring:
-                self.start_auto_monitoring()
-            else:
-                self.stop_auto_monitoring()
+    def toggle_manual_recording(self):
+        """切换手动录制状态"""
+        if not self.is_recording:
+            self.start_manual_recording()
         else:
-            # 手动录制模式
-            if not self.is_recording:
-                self.start_manual_recording()
-            else:
-                self.stop_manual_recording()
+            self.stop_manual_recording()
+    
+    def toggle_auto_recording(self):
+        """切换自动录制状态"""
+        if not self.is_monitoring:
+            self.start_auto_monitoring()
+        else:
+            self.stop_auto_monitoring()
     
     def start_manual_recording(self):
         """开始手动录制"""
+        # 校验坐席手机号
+        if not self.agent_phone.get().strip():
+            messagebox.showerror("错误", "请填写坐席手机号")
+            return
+        
         mic_id = self.get_selected_device_id(self.mic_var.get())
         system_id = self.get_selected_device_id(self.system_var.get())
         
@@ -320,8 +399,13 @@ class UnifiedRecorderUI:
     
     def start_auto_monitoring(self):
         """开始自动监听"""
-        mic_id = self.get_selected_device_id(self.mic_var.get())
-        system_id = self.get_selected_device_id(self.system_var.get())
+        # 校验坐席手机号
+        if not self.auto_agent_phone.get().strip():
+            messagebox.showerror("错误", "请填写坐席手机号")
+            return
+        
+        mic_id = self.get_selected_device_id(self.auto_mic_var.get())
+        system_id = self.get_selected_device_id(self.auto_system_var.get())
         
         if mic_id is None:
             messagebox.showerror("错误", "请选择可用的麦克风设备")
@@ -334,9 +418,9 @@ class UnifiedRecorderUI:
         # 设置设备和通话信息
         self.auto_recorder.set_devices(mic_id, system_id)
         self.auto_recorder.set_call_info(
-            self.agent_phone.get(),
-            self.customer_name.get(),
-            self.customer_id.get()
+            self.auto_agent_phone.get(),
+            self.auto_customer_name.get(),
+            self.auto_customer_id.get()
         )
         
         def monitor_thread():
@@ -360,36 +444,37 @@ class UnifiedRecorderUI:
     def update_manual_ui(self, recording):
         """更新手动录制UI"""
         if recording:
-            self.control_btn.config(text="停止录音")
-            self.status_var.set("录音中...")
-            self.status_label.config(foreground="red")
+            self.manual_btn.config(text="停止录音")
+            self.manual_status_var.set("录音中...")
+            self.manual_status_label.config(foreground="red")
         else:
-            self.control_btn.config(text="开始录音")
-            self.status_var.set("就绪")
-            self.status_label.config(foreground="green")
+            self.manual_btn.config(text="开始录音")
+            self.manual_status_var.set("就绪")
+            self.manual_status_label.config(foreground="green")
             self.duration_var.set("00:00")
     
     def update_auto_ui(self, monitoring):
         """更新自动录制UI"""
         if monitoring:
-            self.control_btn.config(text="停止监听")
-            self.status_var.set("监听中...")
-            self.status_label.config(foreground="blue")
+            self.auto_btn.config(text="停止监听")
+            self.auto_status_var.set("监听中...")
+            self.auto_status_label.config(foreground="blue")
         else:
-            self.control_btn.config(text="开始监听")
-            self.status_var.set("就绪")
-            self.status_label.config(foreground="green")
+            self.auto_btn.config(text="开始监听")
+            self.auto_status_var.set("就绪")
+            self.auto_status_label.config(foreground="green")
     
     def start_status_update(self):
         """开始状态更新循环"""
-        if self.is_auto_mode.get():
-            self.update_status_indicators()
+        self.update_status_indicators()
         self.root.after(500, self.start_status_update)
     
     def update_status_indicators(self):
         """更新状态指示器"""
         try:
-            if self.is_auto_mode.get() and self.is_monitoring:
+            # 只在自动录制Tab且正在监听时更新指示器
+            current_tab = self.notebook.index(self.notebook.select())
+            if current_tab == 1 and self.is_monitoring:  # 自动录制Tab
                 status = self.auto_recorder.get_status()
                 
                 # 更新指示器
@@ -428,6 +513,7 @@ class UnifiedRecorderUI:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename_parts = [timestamp]
         
+        # 使用手动录制Tab的变量
         if self.agent_phone.get():
             filename_parts.extend(['Agent', self.agent_phone.get()])
         if self.customer_name.get():
