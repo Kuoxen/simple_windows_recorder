@@ -482,6 +482,21 @@ class UnifiedRecorderUI:
             self.log_message(f"✅ 系统音频文件: {os.path.basename(new_system_file)}")
         
         self.log_message(f"录音完成! 时长: {result['duration']:.2f} 秒")
+        
+        # 自动上传文件
+        if (result['mic_success'] or result['speaker_success']) and self.settings.upload.get('enabled', False):
+            call_info = {
+                'agent_phone': self.agent_phone.get(),
+                'customer_name': self.customer_name.get(),
+                'customer_id': self.customer_id.get()
+            }
+            self.log_message("开始上传文件...")
+            
+            # 使用重命名后的文件路径
+            mic_file = new_mic_file if result['mic_success'] and result['mic_file'] else None
+            system_file = new_system_file if result['speaker_success'] and result['speaker_file'] else None
+            
+            self.uploader.upload_files(mic_file, system_file, call_info, self.upload_callback)
     
     def on_threshold_changed(self, value):
         """音量阈值改变"""
@@ -494,6 +509,10 @@ class UnifiedRecorderUI:
         silence = float(value)
         self.silence_label.config(text=f"{silence:.1f}s")
         self.auto_recorder.update_config('end_silence_duration', silence)
+    
+    def upload_callback(self, success, message):
+        """上传回调函数"""
+        self.root.after(0, self.log_message, message)
     
     def on_recorder_status(self, message):
         """录制器状态回调"""
