@@ -95,7 +95,7 @@ class UnifiedRecorderUI:
         text_frame = tk.Frame(log_frame)
         text_frame.pack(fill=tk.BOTH, expand=True)
         
-        self.log_text = tk.Text(text_frame, height=8, width=70)
+        self.log_text = tk.Text(text_frame, height=15, width=70)
         scrollbar = ttk.Scrollbar(text_frame, orient="vertical", command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
         
@@ -138,19 +138,9 @@ class UnifiedRecorderUI:
         self.agent_phone = tk.StringVar()
         ttk.Entry(agent_frame, textvariable=self.agent_phone, width=20).pack(side=tk.RIGHT, padx=(10, 0))
         
-        # 客户姓名
-        customer_frame = tk.Frame(info_frame)
-        customer_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(customer_frame, text="客户姓名:").pack(side=tk.LEFT)
+        # 初始化空的客户信息变量（保持兼容性）
         self.customer_name = tk.StringVar()
-        ttk.Entry(customer_frame, textvariable=self.customer_name, width=20).pack(side=tk.RIGHT, padx=(10, 0))
-        
-        # 客户ID
-        id_frame = tk.Frame(info_frame)
-        id_frame.pack(fill=tk.X, pady=2)
-        ttk.Label(id_frame, text="客户ID:").pack(side=tk.LEFT)
         self.customer_id = tk.StringVar()
-        ttk.Entry(id_frame, textvariable=self.customer_id, width=20).pack(side=tk.RIGHT, padx=(10, 0))
     
     def setup_manual_ui(self):
         """设置手动录制界面"""

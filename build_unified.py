@@ -15,7 +15,7 @@ def build_unified_exe():
     cmd = [
         "pyinstaller",
         "--onefile",
-        "--console",
+        "--windowed",
         "--name=智能录音系统-统一版",
         f"--add-data=config.yaml{separator}.",
         f"--add-data=src{separator}src",
@@ -55,7 +55,8 @@ def build_unified_exe():
         print("1. 将生成的exe文件复制到目标电脑")
         print("2. 确保目标电脑已安装VB-Cable或启用立体声混音")
         print("3. 双击运行，可在手动和自动录制模式间切换")
-        print("4. 控制台窗口会显示详细的设备检测和调试信息")
+        print("4. 系统日志在界面底部显示，无控制台窗口")
+        print("5. 启用自动上传：修改config.yaml中upload.enabled=true")
         
     except subprocess.CalledProcessError as e:
         print(f"❌ 智能录音系统-统一版打包失败: {e}")
