@@ -53,13 +53,11 @@ class DeviceCalibrationWindow:
         mic_frame = ttk.LabelFrame(devices_container, text="麦克风设备", padding="5")
         mic_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
         
-        self.mic_tree = ttk.Treeview(mic_frame, columns=("name", "volume"), show="tree headings", height=6)
+        self.mic_tree = ttk.Treeview(mic_frame, columns=("name",), show="tree headings", height=6)
         self.mic_tree.heading("#0", text="ID")
         self.mic_tree.heading("name", text="设备名称")
-        self.mic_tree.heading("volume", text="音量")
         self.mic_tree.column("#0", width=30)
-        self.mic_tree.column("name", width=200)
-        self.mic_tree.column("volume", width=60)
+        self.mic_tree.column("name", width=260)
         self.mic_tree.pack(fill=tk.BOTH, expand=True)
         
         # 系统音频设备列表
@@ -78,7 +76,7 @@ class DeviceCalibrationWindow:
         # 填充麦克风设备列表
         for device_id, device_info in self.calibrator.mic_devices:
             self.mic_tree.insert("", tk.END, iid=device_id, text=str(device_id), 
-                               values=(device_info['name'], "0.00"))
+                               values=(device_info['name'],))
         
         # 填充系统音频设备列表
         for device_id, device_info in self.calibrator.system_devices:
@@ -119,22 +117,15 @@ class DeviceCalibrationWindow:
         self.close_button.pack(side=tk.RIGHT)
         
     def update_device_volume(self, device_id, volume):
-        """更新设备音量显示"""
+        """更新设备音量显示（只用于系统音频设备）"""
         try:
-            # 判断是麦克风还是系统音频设备
-            is_mic_device = any(device_id == dev_id for dev_id, _ in self.calibrator.mic_devices)
-            
-            if is_mic_device:
-                tree = self.mic_tree
-            else:
-                tree = self.system_tree
-            
-            tree.set(device_id, "volume", f"{volume:.3f}")
+            # 只更新系统音频设备的音量显示
+            self.system_tree.set(device_id, "volume", f"{volume:.3f}")
             # 高亮活跃设备
             if volume > 0.01:
-                tree.set(device_id, "name", f"🔊 {self.calibrator.get_device_name(device_id)}")
+                self.system_tree.set(device_id, "name", f"🔊 {self.calibrator.get_device_name(device_id)}")
             else:
-                tree.set(device_id, "name", self.calibrator.get_device_name(device_id))
+                self.system_tree.set(device_id, "name", self.calibrator.get_device_name(device_id))
         except:
             pass
     
@@ -229,18 +220,11 @@ class DeviceCalibrationWindow:
         self.reset_buttons()
     
     def safe_update_tree(self, device_id, column, value):
-        """安全更新树形控件"""
+        """安全更新树形控件（只用于系统音频设备重置）"""
         try:
-            # 判断是麦克风还是系统音频设备
-            is_mic_device = any(device_id == dev_id for dev_id, _ in self.calibrator.mic_devices)
-            
-            if is_mic_device:
-                tree = self.mic_tree
-            else:
-                tree = self.system_tree
-            
-            if tree.winfo_exists():
-                tree.set(device_id, column, value)
+            # 只重置系统音频设备的显示
+            if self.system_tree.winfo_exists():
+                self.system_tree.set(device_id, column, value)
         except:
             pass
     
