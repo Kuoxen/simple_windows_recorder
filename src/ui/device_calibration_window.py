@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
-from ..audio.device_calibrator import DeviceCalibrator
+from audio.device_calibrator import DeviceCalibrator
 
 class DeviceCalibrationWindow:
     def __init__(self, parent, callback=None):

@@ -33,4 +33,4 @@ post_processing:
   silence_threshold: 0.001   # 静音检测阈值
   silence_ratio: 0.95        # 允许静音比例（超过此比例认为无声）
   merge_to_stereo: true      # 合并为双声道文件
-  keep_original: false       # 是否保留原始分离文件
+  keep_original: true       # 是否保留原始分离文件

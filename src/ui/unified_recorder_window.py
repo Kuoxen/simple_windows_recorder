@@ -11,6 +11,7 @@ from config.settings import Settings
 from audio.enhanced_device_manager import EnhancedDeviceManager
 from audio.enhanced_recorder import EnhancedAudioRecorder
 from audio.auto_recorder import AutoAudioRecorder
+from audio.post_processor import AudioPostProcessor
 from storage.uploader import FileUploader
 from ui.device_calibration_window import DeviceCalibrationWindow
 
@@ -19,6 +20,7 @@ class UnifiedRecorderUI:
         self.root = tk.Tk()
         self.root.title("岩硅智能音频采集器")
         self.root.geometry("700x700")
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # 配置日志
         logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -35,6 +37,8 @@ class UnifiedRecorderUI:
             self.device_manager = EnhancedDeviceManager()
             self.manual_recorder = EnhancedAudioRecorder(self.settings)
             self.auto_recorder = AutoAudioRecorder(self.settings)
+            self.post_processor = AudioPostProcessor(self.settings)
+            self.post_processor.start()
             self.uploader = FileUploader(self.settings)
             
             # 设置回调
@@ -513,20 +517,20 @@ class UnifiedRecorderUI:
         
         self.log_message(f"录音完成! 时长: {result['duration']:.2f} 秒")
         
-        # 自动上传文件
-        if (result['mic_success'] or result['speaker_success']) and self.settings.upload.get('enabled', False):
+        # 提交后处理
+        if result['mic_success'] or result['speaker_success']:
             call_info = {
                 'agent_phone': self.agent_phone.get(),
                 'customer_name': self.customer_name.get(),
                 'customer_id': self.customer_id.get()
             }
-            self.log_message("开始上传文件...")
+            self.log_message("提交后处理...")
             
             # 使用重命名后的文件路径
             mic_file = new_mic_file if result['mic_success'] and result['mic_file'] else None
             system_file = new_system_file if result['speaker_success'] and result['speaker_file'] else None
             
-            self.uploader.upload_files(mic_file, system_file, call_info, self.upload_callback)
+            self.post_processor.submit_recording(mic_file, system_file, call_info)
     
     def on_threshold_changed(self, value):
         """音量阈值改变"""
@@ -556,6 +560,18 @@ class UnifiedRecorderUI:
             self.log_text.see(tk.END)
         except:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
+    
+    def on_closing(self):
+        """窗口关闭事件处理"""
+        if self.is_recording or self.is_monitoring:
+            if messagebox.askokcancel("退出", "正在录音/监听中，确定要退出吗？"):
+                if hasattr(self, 'post_processor'):
+                    self.post_processor.stop()
+                self.root.destroy()
+        else:
+            if hasattr(self, 'post_processor'):
+                self.post_processor.stop()
+            self.root.destroy()
     
     def run(self):
         self.root.mainloop()

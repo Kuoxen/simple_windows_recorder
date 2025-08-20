@@ -10,13 +10,17 @@ import os
 class DeviceCalibrator:
     """设备校准器 - 通过实际音频测试自动选择最佳设备"""
     
-    def __init__(self):
+    def __init__(self, debug_mode=False):
         self.devices = sd.query_devices()
         self.input_devices = [(i, d) for i, d in enumerate(self.devices) if d['max_input_channels'] > 0]
         self.is_testing = False
         self.test_results = {}
         self.sample_rate = 44100
         self.block_size = 1024
+        self.debug_mode = debug_mode
+        
+        if debug_mode:
+            print(f"调试模式: 找到 {len(self.input_devices)} 个输入设备")
         
     def test_microphone_devices(self, duration: float = 5.0, callback=None) -> Dict[int, float]:
         """测试麦克风设备 - 用户说话时检测哪个设备有最强信号"""
@@ -57,8 +61,13 @@ class DeviceCalibrator:
         
         # 开始测试
         self.is_testing = True
+        if self.debug_mode:
+            print(f"开始麦克风测试，时长: {duration}秒")
         time.sleep(duration)
         self.is_testing = False
+        
+        if self.debug_mode:
+            print("麦克风测试完成")
         
         # 停止所有流
         for stream in streams.values():
@@ -139,11 +148,17 @@ class DeviceCalibrator:
         
         # 播放测试音频
         try:
+            if self.debug_mode:
+                print("开始播放测试音频...")
             sd.play(reference_audio, self.sample_rate)
             sd.wait()  # 等待播放完成
             time.sleep(0.5)  # 额外等待确保捕获完整
+            if self.debug_mode:
+                print("测试音频播放完成")
         except Exception as e:
             print(f"播放测试音频失败: {e}")
+            if self.debug_mode:
+                print("注意: 在Mac上可能无法正确测试系统音频捕获")
         
         self.is_testing = False
         

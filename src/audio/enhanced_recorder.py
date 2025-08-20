@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, Callable
 import os
+from .post_processor import AudioPostProcessor
 
 class EnhancedAudioRecorder:
     """增强版音频录制器，提供更稳定的录音功能和错误处理"""
@@ -29,6 +30,10 @@ class EnhancedAudioRecorder:
         
         # 回调函数
         self.status_callback: Optional[Callable[[str], None]] = None
+        
+        # 后处理器
+        self.post_processor = AudioPostProcessor(settings)
+        self.post_processor.start()
         
     def set_status_callback(self, callback: Callable[[str], None]):
         """设置状态回调函数"""
@@ -303,3 +308,20 @@ class EnhancedAudioRecorder:
             'mic_error': self.mic_error,
             'speaker_error': self.speaker_error
         }
+    
+    def submit_for_post_processing(self, result, call_info):
+        """提交录音结果进行后处理"""
+        if result and (result.get('mic_file') or result.get('speaker_file')):
+            try:
+                self.post_processor.submit_recording(
+                    result.get('mic_file'),
+                    result.get('speaker_file'),
+                    call_info
+                )
+            except Exception as e:
+                self._notify_status(f"后处理提交失败: {e}")
+    
+    def stop_post_processor(self):
+        """停止后处理器"""
+        if hasattr(self, 'post_processor'):
+            self.post_processor.stop()
