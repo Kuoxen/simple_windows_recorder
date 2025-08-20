@@ -125,23 +125,22 @@ class DeviceCalibrationWindow:
                 # 检查是否被取消
                 if not self.is_calibrating:
                     return
-                    
-                # 麦克风测试
-                self.window.after(0, lambda: self.status_label.config(text="请对着麦克风说话 (5秒)..."))
-                self.window.after(0, lambda: self.progress.config(value=10))
+                
+                # 麦克风测试阶段
+                self.window.after(0, lambda: self.status_label.config(text="麦克风测试: 请对着麦克风说话..."))
+                self.window.after(0, lambda: self.safe_update_progress(10))
                 
                 mic_results = self.calibrator.test_microphone_devices(
                     duration=5.0,
                     callback=lambda dev_id, vol: self.window.after(0, lambda: self.update_device_volume(dev_id, vol)) if self.is_calibrating else None
                 )
                 
-                # 检查是否被取消
                 if not self.is_calibrating:
                     return
                 
-                # 系统音频测试
-                self.window.after(0, lambda: self.status_label.config(text="正在测试系统音频..."))
-                self.window.after(0, lambda: self.progress.config(value=60))
+                # 系统音频测试阶段
+                self.window.after(0, lambda: self.status_label.config(text="系统音频测试: 正在播放测试音频..."))
+                self.window.after(0, lambda: self.safe_update_progress(60))
                 
                 # 重置显示
                 for device_id, _ in self.calibrator.input_devices:
@@ -151,29 +150,38 @@ class DeviceCalibrationWindow:
                     self.window.after(0, lambda did=device_id: self.safe_update_tree(did, "name", self.calibrator.get_device_name(did)))
                 
                 test_audio = self.calibrator.generate_test_audio(3.0)
+                
                 system_results = self.calibrator.test_system_audio_devices(
                     test_audio,
                     callback=lambda dev_id, vol: self.window.after(0, lambda: self.update_device_volume(dev_id, vol)) if self.is_calibrating else None
                 )
                 
-                # 检查是否被取消
                 if not self.is_calibrating:
                     return
+                
+                # 完成阶段
+                self.window.after(0, lambda: self.status_label.config(text="正在分析结果..."))
+                self.window.after(0, lambda: self.safe_update_progress(95))
                 
                 # 选择最佳设备
                 self.selected_mic = max(mic_results.items(), key=lambda x: x[1])[0] if mic_results else None
                 self.selected_system = max(system_results.items(), key=lambda x: x[1])[0] if system_results else None
                 
                 self.window.after(0, lambda: self.safe_update_progress(100))
+                self.window.after(0, lambda: self.status_label.config(text="校准完成！"))
+                time.sleep(0.5)  # 让用户看到完成状态
                 self.window.after(0, self.show_results)
                 
             except Exception as e:
-                if self.is_calibrating:  # 只有在未取消时才显示错误
+                if self.is_calibrating:
                     self.window.after(0, lambda: messagebox.showerror("错误", f"校准失败: {str(e)}"))
                 self.window.after(0, self.reset_buttons)
         
         self.calibration_thread = threading.Thread(target=calibration_thread, daemon=True)
         self.calibration_thread.start()
+        
+        # 设置超时保护
+        self.window.after(15000, self.check_calibration_timeout)  # 15秒超时
     
     def show_results(self):
         """显示校准结果"""
@@ -239,6 +247,14 @@ class DeviceCalibrationWindow:
             self.progress.config(value=0)
         except:
             pass
+    
+    def check_calibration_timeout(self):
+        """检查校准超时"""
+        if self.is_calibrating:
+            self.is_calibrating = False
+            self.calibrator.is_testing = False
+            messagebox.showwarning("超时", "校准超时（超过15秒），请检查设备连接后重试")
+            self.reset_buttons()
     
     def close_window(self):
         """关闭窗口"""

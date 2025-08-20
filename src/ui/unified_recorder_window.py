@@ -22,8 +22,11 @@ class UnifiedRecorderUI:
         self.root.geometry("700x700")
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
-        # 配置日志
-        logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        # 配置日志 - 显示INFO级别但减少频繁日志
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        
+        # 为后处理器创建专门的日志处理器，输出到UI
+        self.setup_ui_logging()
         
         # 录制模式
         self.is_auto_mode = tk.BooleanVar(value=False)
@@ -52,6 +55,30 @@ class UnifiedRecorderUI:
             print(f"初始化错误: {e}")
             self.setup_ui()
             self.log_message(f"初始化错误: {e}")
+    
+    def setup_ui_logging(self):
+        """设置UI日志处理器"""
+        class UILogHandler(logging.Handler):
+            def __init__(self, ui_callback):
+                super().__init__()
+                self.ui_callback = ui_callback
+            
+            def emit(self, record):
+                try:
+                    msg = self.format(record)
+                    self.ui_callback(msg)
+                except:
+                    pass
+        
+        # 为后处理器添加UI日志处理器
+        ui_handler = UILogHandler(self.log_message)
+        ui_handler.setLevel(logging.INFO)
+        ui_handler.setFormatter(logging.Formatter('%(message)s'))
+        
+        # 获取后处理器的logger并添加处理器
+        post_processor_logger = logging.getLogger('audio.post_processor')
+        post_processor_logger.addHandler(ui_handler)
+        post_processor_logger.setLevel(logging.INFO)
     
     def setup_ui(self):
         # 主框架
@@ -449,7 +476,7 @@ class UnifiedRecorderUI:
     def start_status_update(self):
         """开始状态更新循环"""
         self.update_status_indicators()
-        self.root.after(500, self.start_status_update)
+        self.root.after(2000, self.start_status_update)  # 减少更新频率从500ms到2s
     
     def update_status_indicators(self):
         """更新状态指示器"""
@@ -459,7 +486,7 @@ class UnifiedRecorderUI:
             if current_tab == 1 and self.is_monitoring:  # 自动录制Tab
                 status = self.auto_recorder.get_status()
                 
-                # 更新指示器
+                # 更新指示器（减少频率，避免过多日志）
                 self.mic_indicator.config(fg="green" if status.get('mic_active', False) else "gray")
                 self.system_indicator.config(fg="green" if status.get('system_active', False) else "gray")
                 
