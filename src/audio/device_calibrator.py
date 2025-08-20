@@ -28,58 +28,76 @@ class DeviceCalibrator:
         streams = {}
         audio_data = {}
         
-        # 为每个输入设备创建音频流
-        for device_id, device_info in self.input_devices:
-            try:
-                audio_data[device_id] = []
-                
-                def make_callback(dev_id):
-                    def audio_callback(indata, frames, time, status):
-                        if self.is_testing:
-                            # 计算RMS音量
-                            rms = np.sqrt(np.mean(indata**2))
-                            audio_data[dev_id].append(rms)
-                            
-                            # 实时回调更新UI
-                            if callback:
-                                callback(dev_id, rms)
-                    return audio_callback
-                
-                stream = sd.InputStream(
-                    device=device_id,
-                    channels=1,
-                    samplerate=self.sample_rate,
-                    blocksize=self.block_size,
-                    callback=make_callback(device_id)
-                )
-                streams[device_id] = stream
-                stream.start()
-                
-            except Exception as e:
-                print(f"无法打开设备 {device_id}: {e}")
-                continue
-        
-        # 开始测试
-        self.is_testing = True
-        if self.debug_mode:
-            print(f"开始麦克风测试，时长: {duration}秒")
-        time.sleep(duration)
-        self.is_testing = False
-        
-        if self.debug_mode:
-            print("麦克风测试完成")
-        
-        # 停止所有流
-        for stream in streams.values():
-            stream.stop()
-            stream.close()
+        try:
+            # 为每个输入设备创建音频流
+            for device_id, device_info in self.input_devices:
+                try:
+                    audio_data[device_id] = []
+                    
+                    def make_callback(dev_id):
+                        def audio_callback(indata, frames, time, status):
+                            if self.is_testing:
+                                try:
+                                    # 计算RMS音量
+                                    rms = np.sqrt(np.mean(indata**2))
+                                    audio_data[dev_id].append(rms)
+                                    
+                                    # 实时回调更新UI
+                                    if callback:
+                                        callback(dev_id, rms)
+                                except:
+                                    pass  # 忽略回调错误
+                        return audio_callback
+                    
+                    stream = sd.InputStream(
+                        device=device_id,
+                        channels=1,
+                        samplerate=self.sample_rate,
+                        blocksize=self.block_size,
+                        callback=make_callback(device_id)
+                    )
+                    streams[device_id] = stream
+                    stream.start()
+                    
+                except Exception as e:
+                    if self.debug_mode:
+                        print(f"无法打开设备 {device_id}: {e}")
+                    continue
+            
+            # 开始测试
+            self.is_testing = True
+            if self.debug_mode:
+                print(f"开始麦克风测试，时长: {duration}秒")
+            
+            # 分段睡眠，以便可以及时取消
+            sleep_interval = 0.1
+            total_slept = 0
+            while total_slept < duration and self.is_testing:
+                time.sleep(sleep_interval)
+                total_slept += sleep_interval
+            
+            self.is_testing = False
+            
+            if self.debug_mode:
+                print("麦克风测试完成")
+            
+        finally:
+            # 停止所有流
+            for stream in streams.values():
+                try:
+                    stream.stop()
+                    stream.close()
+                except:
+                    pass
         
         # 计算每个设备的平均音量
         for device_id in audio_data:
             if audio_data[device_id]:
-                avg_volume = np.mean(audio_data[device_id])
-                max_volume = np.max(audio_data[device_id])
-                results[device_id] = max_volume  # 使用峰值作为判断标准
+                try:
+                    max_volume = np.max(audio_data[device_id])
+                    results[device_id] = max_volume  # 使用峰值作为判断标准
+                except:
+                    results[device_id] = 0.0
             else:
                 results[device_id] = 0.0
         
@@ -108,92 +126,120 @@ class DeviceCalibrator:
         streams = {}
         audio_data = {}
         
-        # 读取测试音频作为参考
-        with wave.open(test_audio_file, 'rb') as wf:
-            reference_audio = np.frombuffer(wf.readframes(-1), dtype=np.int16).astype(np.float32) / 32767.0
-        
-        # 为每个输入设备创建音频流
-        for device_id, device_info in self.input_devices:
-            try:
-                audio_data[device_id] = []
-                
-                def make_callback(dev_id):
-                    def audio_callback(indata, frames, time, status):
-                        if self.is_testing:
-                            # 记录音频数据
-                            audio_data[dev_id].extend(indata.flatten())
-                            
-                            # 计算当前音量用于UI显示
-                            rms = np.sqrt(np.mean(indata**2))
-                            if callback:
-                                callback(dev_id, rms)
-                    return audio_callback
-                
-                stream = sd.InputStream(
-                    device=device_id,
-                    channels=1,
-                    samplerate=self.sample_rate,
-                    blocksize=self.block_size,
-                    callback=make_callback(device_id)
-                )
-                streams[device_id] = stream
-                stream.start()
-                
-            except Exception as e:
-                print(f"无法打开设备 {device_id}: {e}")
-                continue
-        
-        # 开始测试
-        self.is_testing = True
-        
-        # 播放测试音频
         try:
-            if self.debug_mode:
-                print("开始播放测试音频...")
-            sd.play(reference_audio, self.sample_rate)
-            sd.wait()  # 等待播放完成
-            time.sleep(0.5)  # 额外等待确保捕获完整
-            if self.debug_mode:
-                print("测试音频播放完成")
-        except Exception as e:
-            print(f"播放测试音频失败: {e}")
-            if self.debug_mode:
-                print("注意: 在Mac上可能无法正确测试系统音频捕获")
-        
-        self.is_testing = False
-        
-        # 停止所有流
-        for stream in streams.values():
-            stream.stop()
-            stream.close()
+            # 读取测试音频作为参考
+            with wave.open(test_audio_file, 'rb') as wf:
+                reference_audio = np.frombuffer(wf.readframes(-1), dtype=np.int16).astype(np.float32) / 32767.0
+            
+            # 为每个输入设备创建音频流
+            for device_id, device_info in self.input_devices:
+                try:
+                    audio_data[device_id] = []
+                    
+                    def make_callback(dev_id):
+                        def audio_callback(indata, frames, time, status):
+                            if self.is_testing:
+                                try:
+                                    # 记录音频数据
+                                    audio_data[dev_id].extend(indata.flatten())
+                                    
+                                    # 计算当前音量用于UI显示
+                                    rms = np.sqrt(np.mean(indata**2))
+                                    if callback:
+                                        callback(dev_id, rms)
+                                except:
+                                    pass  # 忽略回调错误
+                        return audio_callback
+                    
+                    stream = sd.InputStream(
+                        device=device_id,
+                        channels=1,
+                        samplerate=self.sample_rate,
+                        blocksize=self.block_size,
+                        callback=make_callback(device_id)
+                    )
+                    streams[device_id] = stream
+                    stream.start()
+                    
+                except Exception as e:
+                    if self.debug_mode:
+                        print(f"无法打开设备 {device_id}: {e}")
+                    continue
+            
+            # 开始测试
+            self.is_testing = True
+            
+            # 播放测试音频
+            try:
+                if self.debug_mode:
+                    print("开始播放测试音频...")
+                
+                # 检查是否被取消
+                if not self.is_testing:
+                    return {}
+                
+                sd.play(reference_audio, self.sample_rate)
+                
+                # 分段等待，以便可以及时取消
+                audio_duration = len(reference_audio) / self.sample_rate
+                sleep_interval = 0.1
+                total_waited = 0
+                while total_waited < audio_duration and self.is_testing:
+                    time.sleep(sleep_interval)
+                    total_waited += sleep_interval
+                
+                if self.is_testing:
+                    time.sleep(0.5)  # 额外等待确保捕获完整
+                
+                if self.debug_mode:
+                    print("测试音频播放完成")
+                    
+            except Exception as e:
+                if self.debug_mode:
+                    print(f"播放测试音频失败: {e}")
+                    print("注意: 在Mac上可能无法正确测试系统音频捕获")
+            
+            self.is_testing = False
+            
+        finally:
+            # 停止所有流
+            for stream in streams.values():
+                try:
+                    stream.stop()
+                    stream.close()
+                except:
+                    pass
         
         # 分析每个设备捕获的音频与参考音频的相关性
         for device_id in audio_data:
             if len(audio_data[device_id]) > 0:
-                captured = np.array(audio_data[device_id])
-                
-                # 计算音量作为基础指标
-                volume = np.sqrt(np.mean(captured**2))
-                
-                # 如果音量足够大，进行相关性分析
-                if volume > 0.001:  # 音量阈值
-                    # 简化的相关性检测：检查是否有明显的1kHz频率成分
-                    fft = np.fft.fft(captured)
-                    freqs = np.fft.fftfreq(len(captured), 1/self.sample_rate)
+                try:
+                    captured = np.array(audio_data[device_id])
                     
-                    # 找到1kHz附近的能量
-                    target_freq = 1000
-                    freq_range = 50  # ±50Hz
-                    mask = (np.abs(freqs - target_freq) < freq_range) | (np.abs(freqs + target_freq) < freq_range)
-                    target_energy = np.sum(np.abs(fft[mask])**2)
-                    total_energy = np.sum(np.abs(fft)**2)
+                    # 计算音量作为基础指标
+                    volume = np.sqrt(np.mean(captured**2))
                     
-                    if total_energy > 0:
-                        correlation_score = target_energy / total_energy
-                        results[device_id] = volume * correlation_score  # 综合评分
+                    # 如果音量足够大，进行相关性分析
+                    if volume > 0.001:  # 音量阈值
+                        # 简化的相关性检测：检查是否有明显的1kHz频率成分
+                        fft = np.fft.fft(captured)
+                        freqs = np.fft.fftfreq(len(captured), 1/self.sample_rate)
+                        
+                        # 找到1kHz附近的能量
+                        target_freq = 1000
+                        freq_range = 50  # ±50Hz
+                        mask = (np.abs(freqs - target_freq) < freq_range) | (np.abs(freqs + target_freq) < freq_range)
+                        target_energy = np.sum(np.abs(fft[mask])**2)
+                        total_energy = np.sum(np.abs(fft)**2)
+                        
+                        if total_energy > 0:
+                            correlation_score = target_energy / total_energy
+                            results[device_id] = volume * correlation_score  # 综合评分
+                        else:
+                            results[device_id] = 0.0
                     else:
                         results[device_id] = 0.0
-                else:
+                except:
                     results[device_id] = 0.0
             else:
                 results[device_id] = 0.0

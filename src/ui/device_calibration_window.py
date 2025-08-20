@@ -10,19 +10,23 @@ class DeviceCalibrationWindow:
         self.calibrator = DeviceCalibrator()
         self.selected_mic = None
         self.selected_system = None
+        self.calibration_thread = None
+        self.is_calibrating = False
         
         self.setup_ui()
         
     def setup_ui(self):
         self.window = tk.Toplevel(self.parent)
         self.window.title("设备校准向导")
-        self.window.geometry("600x500")
-        self.window.resizable(False, False)
+        self.window.geometry("600x550")
+        self.window.resizable(True, True)
+        self.window.minsize(600, 550)
         self.window.grab_set()
         
         # 主框架
         main_frame = ttk.Frame(self.window, padding="20")
         main_frame.pack(fill=tk.BOTH, expand=True)
+        main_frame.grid_rowconfigure(2, weight=1)  # 设备列表可扩展
         
         # 标题
         title_label = ttk.Label(main_frame, text="设备校准向导", font=("Arial", 16, "bold"))
@@ -67,17 +71,33 @@ class DeviceCalibrationWindow:
         self.progress = ttk.Progressbar(main_frame, mode='determinate')
         self.progress.pack(fill=tk.X, pady=(0, 20))
         
-        # 按钮框架
+        # 按钮框架 - 使用grid布局确保按钮有足够高度
         button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X)
+        button_frame.pack(fill=tk.X, pady=(10, 0))
         
-        self.start_button = ttk.Button(button_frame, text="开始校准", command=self.start_calibration)
+        # 设置按钮样式，确保有足够高度
+        button_style = ttk.Style()
+        button_style.configure('Calibration.TButton', padding=(10, 8))
+        
+        self.start_button = ttk.Button(button_frame, text="开始校准", 
+                                     command=self.start_calibration, 
+                                     style='Calibration.TButton')
         self.start_button.pack(side=tk.LEFT, padx=(0, 10))
         
-        self.skip_button = ttk.Button(button_frame, text="跳过校准", command=self.skip_calibration)
+        self.cancel_button = ttk.Button(button_frame, text="取消校准", 
+                                      command=self.cancel_calibration,
+                                      style='Calibration.TButton')
+        self.cancel_button.pack(side=tk.LEFT, padx=(0, 10))
+        self.cancel_button.config(state='disabled')
+        
+        self.skip_button = ttk.Button(button_frame, text="跳过校准", 
+                                    command=self.skip_calibration,
+                                    style='Calibration.TButton')
         self.skip_button.pack(side=tk.LEFT, padx=(0, 10))
         
-        self.close_button = ttk.Button(button_frame, text="取消", command=self.close_window)
+        self.close_button = ttk.Button(button_frame, text="关闭", 
+                                     command=self.close_window,
+                                     style='Calibration.TButton')
         self.close_button.pack(side=tk.RIGHT)
         
     def update_device_volume(self, device_id, volume):
@@ -94,19 +114,30 @@ class DeviceCalibrationWindow:
     
     def start_calibration(self):
         """开始校准流程"""
+        self.is_calibrating = True
         self.start_button.config(state='disabled')
         self.skip_button.config(state='disabled')
+        self.cancel_button.config(state='normal')
+        self.close_button.config(state='disabled')
         
         def calibration_thread():
             try:
+                # 检查是否被取消
+                if not self.is_calibrating:
+                    return
+                    
                 # 麦克风测试
                 self.window.after(0, lambda: self.status_label.config(text="请对着麦克风说话 (5秒)..."))
                 self.window.after(0, lambda: self.progress.config(value=10))
                 
                 mic_results = self.calibrator.test_microphone_devices(
                     duration=5.0,
-                    callback=lambda dev_id, vol: self.window.after(0, lambda: self.update_device_volume(dev_id, vol))
+                    callback=lambda dev_id, vol: self.window.after(0, lambda: self.update_device_volume(dev_id, vol)) if self.is_calibrating else None
                 )
+                
+                # 检查是否被取消
+                if not self.is_calibrating:
+                    return
                 
                 # 系统音频测试
                 self.window.after(0, lambda: self.status_label.config(text="正在测试系统音频..."))
@@ -114,27 +145,35 @@ class DeviceCalibrationWindow:
                 
                 # 重置显示
                 for device_id, _ in self.calibrator.input_devices:
-                    self.window.after(0, lambda did=device_id: self.device_tree.set(did, "volume", "0.00"))
-                    self.window.after(0, lambda did=device_id: self.device_tree.set(did, "name", self.calibrator.get_device_name(did)))
+                    if not self.is_calibrating:
+                        return
+                    self.window.after(0, lambda did=device_id: self.safe_update_tree(did, "volume", "0.00"))
+                    self.window.after(0, lambda did=device_id: self.safe_update_tree(did, "name", self.calibrator.get_device_name(did)))
                 
                 test_audio = self.calibrator.generate_test_audio(3.0)
                 system_results = self.calibrator.test_system_audio_devices(
                     test_audio,
-                    callback=lambda dev_id, vol: self.window.after(0, lambda: self.update_device_volume(dev_id, vol))
+                    callback=lambda dev_id, vol: self.window.after(0, lambda: self.update_device_volume(dev_id, vol)) if self.is_calibrating else None
                 )
+                
+                # 检查是否被取消
+                if not self.is_calibrating:
+                    return
                 
                 # 选择最佳设备
                 self.selected_mic = max(mic_results.items(), key=lambda x: x[1])[0] if mic_results else None
                 self.selected_system = max(system_results.items(), key=lambda x: x[1])[0] if system_results else None
                 
-                self.window.after(0, lambda: self.progress.config(value=100))
+                self.window.after(0, lambda: self.safe_update_progress(100))
                 self.window.after(0, self.show_results)
                 
             except Exception as e:
-                self.window.after(0, lambda: messagebox.showerror("错误", f"校准失败: {str(e)}"))
+                if self.is_calibrating:  # 只有在未取消时才显示错误
+                    self.window.after(0, lambda: messagebox.showerror("错误", f"校准失败: {str(e)}"))
                 self.window.after(0, self.reset_buttons)
         
-        threading.Thread(target=calibration_thread, daemon=True).start()
+        self.calibration_thread = threading.Thread(target=calibration_thread, daemon=True)
+        self.calibration_thread.start()
     
     def show_results(self):
         """显示校准结果"""
@@ -165,13 +204,50 @@ class DeviceCalibrationWindow:
         if messagebox.askyesno("跳过校准", "确定要跳过设备校准吗？\n将使用默认设备选择逻辑。"):
             self.close_window()
     
+    def cancel_calibration(self):
+        """取消校准"""
+        self.is_calibrating = False
+        self.calibrator.is_testing = False
+        self.status_label.config(text="校准已取消")
+        self.reset_buttons()
+    
+    def safe_update_tree(self, device_id, column, value):
+        """安全更新树形控件"""
+        try:
+            if self.device_tree.winfo_exists():
+                self.device_tree.set(device_id, column, value)
+        except:
+            pass
+    
+    def safe_update_progress(self, value):
+        """安全更新进度条"""
+        try:
+            if self.progress.winfo_exists():
+                self.progress.config(value=value)
+        except:
+            pass
+    
     def reset_buttons(self):
         """重置按钮状态"""
+        self.is_calibrating = False
         self.start_button.config(state='normal')
         self.skip_button.config(state='normal')
+        self.cancel_button.config(state='disabled')
+        self.close_button.config(state='normal')
         self.status_label.config(text="准备开始校准...")
-        self.progress.config(value=0)
+        try:
+            self.progress.config(value=0)
+        except:
+            pass
     
     def close_window(self):
         """关闭窗口"""
+        # 停止校准
+        self.is_calibrating = False
+        self.calibrator.is_testing = False
+        
+        # 等待线程结束
+        if self.calibration_thread and self.calibration_thread.is_alive():
+            self.calibration_thread.join(timeout=1.0)
+        
         self.window.destroy()
