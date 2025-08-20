@@ -5,10 +5,10 @@ import time
 from audio.device_calibrator import DeviceCalibrator
 
 class DeviceCalibrationWindow:
-    def __init__(self, parent, callback=None):
+    def __init__(self, parent, mic_devices, system_devices, callback=None):
         self.parent = parent
         self.callback = callback
-        self.calibrator = DeviceCalibrator()
+        self.calibrator = DeviceCalibrator(mic_devices, system_devices)
         self.selected_mic = None
         self.selected_system = None
         self.calibration_thread = None
@@ -42,27 +42,47 @@ class DeviceCalibrationWindow:
         info_label.pack(pady=(0, 20))
         
         # 设备列表框架
-        devices_frame = ttk.LabelFrame(main_frame, text="检测到的输入设备", padding="10")
+        devices_frame = ttk.LabelFrame(main_frame, text="设备列表", padding="10")
         devices_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 20))
         
-        # 设备列表
-        self.device_tree = ttk.Treeview(devices_frame, columns=("name", "volume"), show="tree headings", height=8)
-        self.device_tree.heading("#0", text="ID")
-        self.device_tree.heading("name", text="设备名称")
-        self.device_tree.heading("volume", text="音量")
-        self.device_tree.column("#0", width=50)
-        self.device_tree.column("name", width=350)
-        self.device_tree.column("volume", width=100)
+        # 创建两列布局
+        devices_container = ttk.Frame(devices_frame)
+        devices_container.pack(fill=tk.BOTH, expand=True)
         
-        scrollbar = ttk.Scrollbar(devices_frame, orient=tk.VERTICAL, command=self.device_tree.yview)
-        self.device_tree.configure(yscrollcommand=scrollbar.set)
+        # 麦克风设备列表
+        mic_frame = ttk.LabelFrame(devices_container, text="麦克风设备", padding="5")
+        mic_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
         
-        self.device_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.mic_tree = ttk.Treeview(mic_frame, columns=("name", "volume"), show="tree headings", height=6)
+        self.mic_tree.heading("#0", text="ID")
+        self.mic_tree.heading("name", text="设备名称")
+        self.mic_tree.heading("volume", text="音量")
+        self.mic_tree.column("#0", width=30)
+        self.mic_tree.column("name", width=200)
+        self.mic_tree.column("volume", width=60)
+        self.mic_tree.pack(fill=tk.BOTH, expand=True)
         
-        # 填充设备列表
-        for device_id, device_info in self.calibrator.input_devices:
-            self.device_tree.insert("", tk.END, iid=device_id, text=str(device_id), 
+        # 系统音频设备列表
+        system_frame = ttk.LabelFrame(devices_container, text="系统音频设备", padding="5")
+        system_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        
+        self.system_tree = ttk.Treeview(system_frame, columns=("name", "volume"), show="tree headings", height=6)
+        self.system_tree.heading("#0", text="ID")
+        self.system_tree.heading("name", text="设备名称")
+        self.system_tree.heading("volume", text="音量")
+        self.system_tree.column("#0", width=30)
+        self.system_tree.column("name", width=200)
+        self.system_tree.column("volume", width=60)
+        self.system_tree.pack(fill=tk.BOTH, expand=True)
+        
+        # 填充麦克风设备列表
+        for device_id, device_info in self.calibrator.mic_devices:
+            self.mic_tree.insert("", tk.END, iid=device_id, text=str(device_id), 
+                               values=(device_info['name'], "0.00"))
+        
+        # 填充系统音频设备列表
+        for device_id, device_info in self.calibrator.system_devices:
+            self.system_tree.insert("", tk.END, iid=device_id, text=str(device_id), 
                                   values=(device_info['name'], "0.00"))
         
         # 进度和状态
@@ -91,10 +111,7 @@ class DeviceCalibrationWindow:
         self.cancel_button.pack(side=tk.LEFT, padx=(0, 10))
         self.cancel_button.config(state='disabled')
         
-        self.skip_button = ttk.Button(button_frame, text="跳过校准", 
-                                    command=self.skip_calibration,
-                                    style='Calibration.TButton')
-        self.skip_button.pack(side=tk.LEFT, padx=(0, 10))
+
         
         self.close_button = ttk.Button(button_frame, text="关闭", 
                                      command=self.close_window,
@@ -104,12 +121,20 @@ class DeviceCalibrationWindow:
     def update_device_volume(self, device_id, volume):
         """更新设备音量显示"""
         try:
-            self.device_tree.set(device_id, "volume", f"{volume:.3f}")
+            # 判断是麦克风还是系统音频设备
+            is_mic_device = any(device_id == dev_id for dev_id, _ in self.calibrator.mic_devices)
+            
+            if is_mic_device:
+                tree = self.mic_tree
+            else:
+                tree = self.system_tree
+            
+            tree.set(device_id, "volume", f"{volume:.3f}")
             # 高亮活跃设备
             if volume > 0.01:
-                self.device_tree.set(device_id, "name", f"🔊 {self.calibrator.get_device_name(device_id)}")
+                tree.set(device_id, "name", f"🔊 {self.calibrator.get_device_name(device_id)}")
             else:
-                self.device_tree.set(device_id, "name", self.calibrator.get_device_name(device_id))
+                tree.set(device_id, "name", self.calibrator.get_device_name(device_id))
         except:
             pass
     
@@ -117,7 +142,6 @@ class DeviceCalibrationWindow:
         """开始校准流程"""
         self.is_calibrating = True
         self.start_button.config(state='disabled')
-        self.skip_button.config(state='disabled')
         self.cancel_button.config(state='normal')
         self.close_button.config(state='disabled')
         
@@ -132,8 +156,8 @@ class DeviceCalibrationWindow:
                 self.window.after(0, lambda: self.safe_update_progress(10))
                 
                 mic_results = self.calibrator.test_microphone_devices(
-                    duration=5.0,
-                    callback=lambda dev_id, vol: self.window.after(0, lambda: self.update_device_volume(dev_id, vol)) if self.is_calibrating else None
+                    duration=3.0,  # 改为3秒
+                    callback=None  # 去掉UI刷新
                 )
                 
                 if not self.is_calibrating:
@@ -143,12 +167,7 @@ class DeviceCalibrationWindow:
                 self.window.after(0, lambda: self.status_label.config(text="系统音频测试: 正在播放测试音频..."))
                 self.window.after(0, lambda: self.safe_update_progress(60))
                 
-                # 重置显示
-                for device_id, _ in self.calibrator.input_devices:
-                    if not self.is_calibrating:
-                        return
-                    self.window.after(0, lambda did=device_id: self.safe_update_tree(did, "volume", "0.00"))
-                    self.window.after(0, lambda did=device_id: self.safe_update_tree(did, "name", self.calibrator.get_device_name(did)))
+
                 
                 test_audio = self.calibrator.generate_test_audio(3.0)
                 
@@ -160,17 +179,12 @@ class DeviceCalibrationWindow:
                 if not self.is_calibrating:
                     return
                 
-                # 完成阶段
-                self.window.after(0, lambda: self.status_label.config(text="正在分析结果..."))
-                self.window.after(0, lambda: self.safe_update_progress(95))
-                
                 # 选择最佳设备
                 self.selected_mic = max(mic_results.items(), key=lambda x: x[1])[0] if mic_results else None
                 self.selected_system = max(system_results.items(), key=lambda x: x[1])[0] if system_results else None
                 
                 self.window.after(0, lambda: self.safe_update_progress(100))
                 self.window.after(0, lambda: self.status_label.config(text="校准完成！"))
-                time.sleep(0.5)  # 让用户看到完成状态
                 self.window.after(0, self.show_results)
                 
             except Exception as e:
@@ -180,10 +194,6 @@ class DeviceCalibrationWindow:
         
         self.calibration_thread = threading.Thread(target=calibration_thread, daemon=True)
         self.calibration_thread.start()
-        
-        # 设置超时保护（麦克风5秒+系统音频4秒+缓冲时间6秒）
-        timeout_ms = (5 + 4 + 6) * 1000
-        self.window.after(timeout_ms, self.check_calibration_timeout)
     
     def show_results(self):
         """显示校准结果"""
@@ -209,10 +219,7 @@ class DeviceCalibrationWindow:
             self.callback(self.selected_mic, self.selected_system)
         self.close_window()
     
-    def skip_calibration(self):
-        """跳过校准"""
-        if messagebox.askyesno("跳过校准", "确定要跳过设备校准吗？\n将使用默认设备选择逻辑。"):
-            self.close_window()
+
     
     def cancel_calibration(self):
         """取消校准"""
@@ -224,8 +231,16 @@ class DeviceCalibrationWindow:
     def safe_update_tree(self, device_id, column, value):
         """安全更新树形控件"""
         try:
-            if self.device_tree.winfo_exists():
-                self.device_tree.set(device_id, column, value)
+            # 判断是麦克风还是系统音频设备
+            is_mic_device = any(device_id == dev_id for dev_id, _ in self.calibrator.mic_devices)
+            
+            if is_mic_device:
+                tree = self.mic_tree
+            else:
+                tree = self.system_tree
+            
+            if tree.winfo_exists():
+                tree.set(device_id, column, value)
         except:
             pass
     
@@ -241,7 +256,6 @@ class DeviceCalibrationWindow:
         """重置按钮状态"""
         self.is_calibrating = False
         self.start_button.config(state='normal')
-        self.skip_button.config(state='normal')
         self.cancel_button.config(state='disabled')
         self.close_button.config(state='normal')
         self.status_label.config(text="准备开始校准...")
@@ -250,13 +264,7 @@ class DeviceCalibrationWindow:
         except:
             pass
     
-    def check_calibration_timeout(self):
-        """检查校准超时"""
-        if self.is_calibrating:
-            self.is_calibrating = False
-            self.calibrator.is_testing = False
-            messagebox.showwarning("超时", "校准超时，可能存在设备冲突或兼容性问题")
-            self.reset_buttons()
+
     
     def close_window(self):
         """关闭窗口"""

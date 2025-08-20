@@ -10,10 +10,11 @@ import os
 class DeviceCalibrator:
     """设备校准器 - 通过实际音频测试自动选择最佳设备"""
     
-    def __init__(self, debug_mode=False):
+    def __init__(self, mic_devices=None, system_devices=None, debug_mode=False):
+        import sounddevice as sd
         self.devices = sd.query_devices()
-        # 过滤掉明显不相关的设备
-        self.input_devices = self._filter_relevant_devices()
+        self.mic_devices = mic_devices or []  # 主窗口传递的麦克风设备列表
+        self.system_devices = system_devices or []  # 主窗口传递的系统音频设备列表
         self.is_testing = False
         self.test_results = {}
         self.sample_rate = 44100
@@ -21,19 +22,7 @@ class DeviceCalibrator:
         self.debug_mode = debug_mode
         
         if debug_mode:
-            print(f"调试模式: 找到 {len(self.input_devices)} 个相关输入设备")
-    
-    def _filter_relevant_devices(self):
-        """过滤出相关的输入设备"""
-        relevant_devices = []
-        for i, d in enumerate(self.devices):
-            if d['max_input_channels'] > 0:
-                name = d['name'].lower()
-                # 跳过明显不相关的设备
-                if any(skip in name for skip in ['hdmi', 'displayport', 'nvidia', 'amd']):
-                    continue
-                relevant_devices.append((i, d))
-        return relevant_devices
+            print(f"调试模式: 麦克风设备 {len(self.mic_devices)} 个, 系统音频设备 {len(self.system_devices)} 个")
         
     def test_microphone_devices(self, duration: float = 5.0, callback=None) -> Dict[int, float]:
         """测试麦克风设备 - 用户说话时检测哪个设备有最强信号"""
@@ -46,8 +35,8 @@ class DeviceCalibrator:
             # 开始测试
             self.is_testing = True
             
-            # 为所有设备同时创建音频流
-            active_devices = self.input_devices
+            # 测试主窗口传递的麦克风设备
+            active_devices = self.mic_devices
             
             for device_id, device_info in active_devices:
                 if not self.is_testing:
@@ -55,7 +44,6 @@ class DeviceCalibrator:
                     
                 try:
                     audio_data[device_id] = []
-                    callback_counter[device_id] = 0
                     
                     def make_callback(dev_id):
                         def audio_callback(indata, frames, time, status):
@@ -63,13 +51,8 @@ class DeviceCalibrator:
                                 try:
                                     rms = np.sqrt(np.mean(indata**2))
                                     audio_data[dev_id].append(rms)
-                                    
-                                    # 减少UI更新频率：每43次回调更新1次（约每秒1次）
-                                    callback_counter[dev_id] += 1
-                                    if callback and callback_counter[dev_id] % 43 == 0:
-                                        callback(dev_id, rms)
                                 except:
-                                    pass  # 忽略单个设备的回调错误
+                                    pass
                         return audio_callback
                     
                     stream = sd.InputStream(
@@ -152,8 +135,8 @@ class DeviceCalibrator:
             with wave.open(test_audio_file, 'rb') as wf:
                 reference_audio = np.frombuffer(wf.readframes(-1), dtype=np.int16).astype(np.float32) / 32767.0
             
-            # 为所有设备同时创建音频流
-            active_devices = self.input_devices
+            # 测试主窗口传递的系统音频设备
+            active_devices = self.system_devices
             
             for device_id, device_info in active_devices:
                 if not self.is_testing:
