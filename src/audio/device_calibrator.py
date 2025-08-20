@@ -30,6 +30,9 @@ class DeviceCalibrator:
         callback_counter = {}
         
         try:
+            # 开始测试
+            self.is_testing = True
+            
             # 为所有设备同时创建音频流
             active_devices = self.input_devices
             
@@ -80,6 +83,8 @@ class DeviceCalibrator:
                 time.sleep(sleep_interval)
                 total_slept += sleep_interval
             
+            self.is_testing = False
+            
         finally:
             # 停止所有流
             for stream in streams.values():
@@ -127,6 +132,9 @@ class DeviceCalibrator:
         callback_counter = {}
         
         try:
+            # 开始测试
+            self.is_testing = True
+            
             # 读取测试音频
             with wave.open(test_audio_file, 'rb') as wf:
                 reference_audio = np.frombuffer(wf.readframes(-1), dtype=np.int16).astype(np.float32) / 32767.0
@@ -196,6 +204,8 @@ class DeviceCalibrator:
             except Exception as e:
                 if self.debug_mode:
                     print(f"播放测试音频失败: {e}")
+            
+            self.is_testing = False
             
         finally:
             # 停止所有流
