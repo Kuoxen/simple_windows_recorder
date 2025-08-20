@@ -112,12 +112,13 @@ class FileUploader:
             return None
     
     def _generate_oss_key(self, file_path, call_info, file_type):
-        """生成OSS对象键名"""
+        """生成OSS对象键名：公司ID/日期/坐席手机号/文件"""
+        company_id = self.upload_config.get('company_id', '1')
         date_str = datetime.now().strftime('%Y/%m/%d')
         agent_phone = call_info.get('agent_phone', 'unknown')
         filename = os.path.basename(file_path)
         
-        return f"recordings/{date_str}/{agent_phone}/{file_type}_{filename}"
+        return f"recordings/{company_id}/{date_str}/{agent_phone}/{file_type}_{filename}"
     
     def _notify_upload_complete(self, uploaded_files, call_info):
         """通知服务器上传完成"""
@@ -128,6 +129,7 @@ class FileUploader:
             
             data = {
                 'timestamp': datetime.now().isoformat(),
+                'company_id': self.upload_config.get('company_id', '1'),
                 'agent_phone': call_info.get('agent_phone', ''),
                 'customer_name': call_info.get('customer_name', ''),
                 'customer_id': call_info.get('customer_id', ''),

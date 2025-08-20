@@ -12,6 +12,7 @@ from audio.enhanced_device_manager import EnhancedDeviceManager
 from audio.enhanced_recorder import EnhancedAudioRecorder
 from audio.auto_recorder import AutoAudioRecorder
 from storage.uploader import FileUploader
+from ui.device_calibration_window import DeviceCalibrationWindow
 
 class UnifiedRecorderUI:
     def __init__(self):
@@ -123,8 +124,12 @@ class UnifiedRecorderUI:
         self.system_combo = ttk.Combobox(system_frame, textvariable=self.system_var, width=50, state="readonly")
         self.system_combo.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
         
-        # 刷新按钮
-        ttk.Button(device_frame, text="刷新设备", command=self.refresh_devices).pack(pady=(5, 0))
+        # 按钮框架
+        button_frame = tk.Frame(device_frame)
+        button_frame.pack(pady=(5, 0))
+        
+        ttk.Button(button_frame, text="设备校准", command=self.open_calibration_window).pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Button(button_frame, text="刷新设备", command=self.refresh_devices).pack(side=tk.LEFT)
     
     def setup_call_info(self, parent):
         """设置共享的通话信息区域"""
@@ -275,6 +280,31 @@ class UnifiedRecorderUI:
             
         except Exception as e:
             self.log_message(f"设备加载失败: {e}")
+    
+    def open_calibration_window(self):
+        """打开设备校准窗口"""
+        def on_calibration_complete(mic_id, system_id):
+            """校准完成回调"""
+            if mic_id is not None:
+                # 在麦克风列表中选择校准结果
+                for i, option in enumerate(self.mic_combo['values']):
+                    if f"[{mic_id}]" in option:
+                        self.mic_combo.current(i)
+                        break
+                self.log_message(f"已选择麦克风设备: {mic_id}")
+            
+            if system_id is not None:
+                # 在系统音频列表中选择校准结果
+                for i, option in enumerate(self.system_combo['values']):
+                    if f"[{system_id}]" in option:
+                        self.system_combo.current(i)
+                        break
+                self.log_message(f"已选择系统音频设备: {system_id}")
+        
+        try:
+            DeviceCalibrationWindow(self.root, on_calibration_complete)
+        except Exception as e:
+            messagebox.showerror("错误", f"无法打开校准窗口: {e}")
     
     def refresh_devices(self):
         """刷新设备列表"""

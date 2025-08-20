@@ -5,6 +5,7 @@ import threading
 import time
 from datetime import datetime
 import os
+from .post_processor import AudioPostProcessor
 
 class AudioRecorder:
     def __init__(self, settings):
@@ -13,6 +14,10 @@ class AudioRecorder:
         self.mic_data = []
         self.speaker_data = []
         self.start_time = None
+        
+        # 后处理器
+        self.post_processor = AudioPostProcessor(settings)
+        self.post_processor.start()
         
     def start_recording(self, mic_device=None, speaker_device=None):
         """开始录音"""
@@ -56,11 +61,30 @@ class AudioRecorder:
         mic_file = self._save_audio(self.mic_data, f"mic_{timestamp}.wav")
         speaker_file = self._save_audio(self.speaker_data, f"speaker_{timestamp}.wav")
         
-        return {
+        result = {
             'mic_file': mic_file,
             'speaker_file': speaker_file,
             'duration': len(self.mic_data) / self.settings.audio['sample_rate']
         }
+        
+        return result
+    
+    def submit_for_post_processing(self, result, call_info):
+        """提交录音结果进行后处理"""
+        if result and (result.get('mic_file') or result.get('speaker_file')):
+            try:
+                self.post_processor.submit_recording(
+                    result.get('mic_file'),
+                    result.get('speaker_file'),
+                    call_info
+                )
+            except Exception as e:
+                print(f"后处理提交失败: {e}")
+    
+    def stop_post_processor(self):
+        """停止后处理器"""
+        if hasattr(self, 'post_processor'):
+            self.post_processor.stop()
     
     def _record_mic(self, device=None):
         """录制麦克风"""

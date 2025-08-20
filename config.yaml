@@ -21,8 +21,16 @@ auto_recording:
 upload:
   enabled: true
   type: "oss_with_server"
+  company_id: "2"  # 公司ID，用于OSS目录分类和服务端识别
   token_url: "https://www.rocksilicon.com/api/get-upload-token"
   notify_url: "https://www.rocksilicon.com/api/upload-complete"
   timeout: 60
   auto_delete: false
   retry_times: 3
+
+post_processing:
+  min_duration: 5.0          # 最小有效录制时长(秒)
+  silence_threshold: 0.001   # 静音检测阈值
+  silence_ratio: 0.95        # 允许静音比例（超过此比例认为无声）
+  merge_to_stereo: true      # 合并为双声道文件
+  keep_original: false       # 是否保留原始分离文件

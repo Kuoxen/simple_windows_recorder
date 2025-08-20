@@ -15,10 +15,11 @@ def build_unified_exe():
     cmd = [
         "pyinstaller",
         "--onefile",
-        "--windowed",
-        "--name=智能录音系统-统一版",
+        "--console",
+        "--name=岩硅智能录音系统",
         f"--add-data=config.yaml{separator}.",
         f"--add-data=src{separator}src",
+        "--icon=icon.ico",
         "--hidden-import=tkinter",
         "--hidden-import=tkinter.ttk",
         "--hidden-import=requests",

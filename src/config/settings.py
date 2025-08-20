@@ -22,6 +22,10 @@ class Settings:
     def auto_recording(self):
         return self.config.get('auto_recording', {})
     
+    @property
+    def post_processing(self):
+        return self.config.get('post_processing', {})
+    
     def update_auto_recording(self, key, value):
         """更新自动录制配置"""
         if 'auto_recording' not in self.config:

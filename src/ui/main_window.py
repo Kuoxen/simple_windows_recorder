@@ -16,6 +16,7 @@ class RecorderUI:
         self.root = tk.Tk()
         self.root.title("呼叫中心录音系统")
         self.root.geometry("500x400")
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # 初始化组件
         try:
@@ -250,17 +251,22 @@ class RecorderUI:
                     
                     self.root.after(0, self.log_message, f"录音完成! 时长: {result.get('duration', 0):.2f} 秒")
                     
-                    # 只有在有文件时才上传
+                    # 提交后处理
                     if new_mic_file or new_system_file:
                         call_info = {
                             'agent_phone': self.agent_phone.get(),
                             'customer_name': self.customer_name.get(),
                             'customer_id': self.customer_id.get()
                         }
-                        self.root.after(0, self.log_message, "开始上传文件...")
-                        self.uploader.upload_files(new_mic_file, new_system_file, call_info, self.upload_callback)
+                        result_updated = {
+                            'mic_file': new_mic_file,
+                            'speaker_file': new_system_file,
+                            'duration': result.get('duration', 0)
+                        }
+                        self.root.after(0, self.log_message, "提交后处理...")
+                        self.recorder.submit_for_post_processing(result_updated, call_info)
                     else:
-                        self.root.after(0, self.log_message, "❌ 没有文件可上传")
+                        self.root.after(0, self.log_message, "❌ 没有文件可处理")
                 else:
                     self.root.after(0, self.log_message, "❌ 录音失败 - 未能生成录音文件")
             except Exception as e:
@@ -295,6 +301,16 @@ class RecorderUI:
             self.info_text.see(tk.END)
         except:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
+    
+    def on_closing(self):
+        """窗口关闭事件处理"""
+        if self.is_recording:
+            if messagebox.askokcancel("退出", "正在录音中，确定要退出吗？"):
+                self.recorder.stop_post_processor()
+                self.root.destroy()
+        else:
+            self.recorder.stop_post_processor()
+            self.root.destroy()
     
     def run(self):
         self.root.mainloop()

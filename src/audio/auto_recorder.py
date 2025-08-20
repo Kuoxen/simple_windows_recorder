@@ -11,6 +11,7 @@ from enum import Enum
 
 from .circular_buffer import CircularBuffer
 from .activity_detector import AudioActivityDetector
+from .post_processor import AudioPostProcessor
 
 class RecordingState(Enum):
     IDLE = "idle"
@@ -58,6 +59,10 @@ class AutoAudioRecorder:
         
         # 通话信息
         self.call_info = {}
+        
+        # 后处理器
+        self.post_processor = AudioPostProcessor(settings)
+        self.post_processor.start()
     
     def set_status_callback(self, callback: Callable[[str], None]):
         """设置状态回调函数"""
@@ -134,6 +139,11 @@ class AutoAudioRecorder:
             self.monitor_thread.join(timeout=5.0)
         
         self.state = RecordingState.IDLE
+        
+        # 停止后处理器
+        if hasattr(self, 'post_processor'):
+            self.post_processor.stop()
+        
         self._notify_status("监听已停止")
     
     def _validate_devices(self) -> bool:
@@ -405,24 +415,17 @@ class AutoAudioRecorder:
         else:
             self._notify_status("⚠️ 系统音频数据为空")
         
-        # 自动上传文件
-        if (result.get('mic_success') or result.get('system_success')) and self.settings.upload.get('enabled', False):
-            self._notify_status("开始上传文件...")
+        # 提交后处理
+        if result.get('mic_success') or result.get('system_success'):
+            self._notify_status("提交后处理...")
             try:
-                from storage.uploader import FileUploader
-                uploader = FileUploader(self.settings)
-                
-                def upload_callback(success, message):
-                    self._notify_status(message)
-                
-                uploader.upload_files(
+                self.post_processor.submit_recording(
                     result.get('mic_file'),
                     result.get('system_file'),
-                    self.call_info,
-                    upload_callback
+                    self.call_info
                 )
             except Exception as e:
-                self._notify_status(f"上传失败: {e}")
+                self._notify_status(f"后处理提交失败: {e}")
         
         return result
     
