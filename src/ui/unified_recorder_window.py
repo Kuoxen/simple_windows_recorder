@@ -333,7 +333,13 @@ class UnifiedRecorderUI:
                 self.log_message(f"已选择系统音频设备: {system_id}")
         
         try:
-            DeviceCalibrationWindow(self.root, on_calibration_complete)
+            # 获取主窗口的设备列表
+            mic_devices = [(self.get_selected_device_id(option), {'name': option.split('] ')[1] if '] ' in option else option}) 
+                          for option in self.mic_combo['values'] if '✅' in option]
+            system_devices = [(self.get_selected_device_id(option), {'name': option.split('] ')[1] if '] ' in option else option}) 
+                             for option in self.system_combo['values'] if '✅' in option]
+            
+            DeviceCalibrationWindow(self.root, mic_devices, system_devices, on_calibration_complete)
         except Exception as e:
             messagebox.showerror("错误", f"无法打开校准窗口: {e}")
     
