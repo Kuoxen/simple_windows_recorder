@@ -12,7 +12,8 @@ class DeviceCalibrator:
     
     def __init__(self, debug_mode=False):
         self.devices = sd.query_devices()
-        self.input_devices = [(i, d) for i, d in enumerate(self.devices) if d['max_input_channels'] > 0]
+        # 过滤掉明显不相关的设备
+        self.input_devices = self._filter_relevant_devices()
         self.is_testing = False
         self.test_results = {}
         self.sample_rate = 44100
@@ -20,7 +21,19 @@ class DeviceCalibrator:
         self.debug_mode = debug_mode
         
         if debug_mode:
-            print(f"调试模式: 找到 {len(self.input_devices)} 个输入设备")
+            print(f"调试模式: 找到 {len(self.input_devices)} 个相关输入设备")
+    
+    def _filter_relevant_devices(self):
+        """过滤出相关的输入设备"""
+        relevant_devices = []
+        for i, d in enumerate(self.devices):
+            if d['max_input_channels'] > 0:
+                name = d['name'].lower()
+                # 跳过明显不相关的设备
+                if any(skip in name for skip in ['hdmi', 'displayport', 'nvidia', 'amd']):
+                    continue
+                relevant_devices.append((i, d))
+        return relevant_devices
         
     def test_microphone_devices(self, duration: float = 5.0, callback=None) -> Dict[int, float]:
         """测试麦克风设备 - 用户说话时检测哪个设备有最强信号"""
@@ -187,15 +200,16 @@ class DeviceCalibrator:
                 if not self.is_testing:
                     return {}
                 
-                # 使用超时机制防止卡死
-                import threading
-                play_thread = threading.Thread(target=lambda: sd.play(reference_audio, self.sample_rate))
-                play_thread.start()
+                # 播放音频并使用超时保护
+                sd.play(reference_audio, self.sample_rate)
                 
-                # 等待播放完成，超时时间短一些
+                # 分段等待，避免sd.wait()卡死
                 audio_duration = len(reference_audio) / self.sample_rate
-                timeout = audio_duration + 1.0  # 额外1秒超时
-                play_thread.join(timeout=timeout)
+                total_waited = 0
+                wait_interval = 0.1
+                while total_waited < audio_duration + 1.0 and self.is_testing:
+                    time.sleep(wait_interval)
+                    total_waited += wait_interval
                 
                 # 额外等待捕获完整
                 if self.is_testing:
@@ -274,8 +288,17 @@ class DeviceCalibrator:
                 progress_callback("设备校准完成", 100)
             
             # 4. 选择最佳设备
-            best_mic = max(mic_results.items(), key=lambda x: x[1])[0] if mic_results else None
-            best_system = max(system_results.items(), key=lambda x: x[1])[0] if system_results else None
+            best_mic = None
+            if mic_results:
+                max_mic_volume = max(mic_results.values())
+                if max_mic_volume > 0.001:  # 只有真正检测到声音才选择
+                    best_mic = max(mic_results.items(), key=lambda x: x[1])[0]
+            
+            best_system = None
+            if system_results:
+                max_system_score = max(system_results.values())
+                if max_system_score > 0.001:  # 只有真正检测到信号才选择
+                    best_system = max(system_results.items(), key=lambda x: x[1])[0]
             
             # 存储测试结果
             self.test_results = {

@@ -181,8 +181,9 @@ class DeviceCalibrationWindow:
         self.calibration_thread = threading.Thread(target=calibration_thread, daemon=True)
         self.calibration_thread.start()
         
-        # 设置超时保护
-        self.window.after(15000, self.check_calibration_timeout)  # 15秒超时
+        # 设置超时保护（麦克风5秒+系统音频4秒+缓冲时间6秒）
+        timeout_ms = (5 + 4 + 6) * 1000
+        self.window.after(timeout_ms, self.check_calibration_timeout)
     
     def show_results(self):
         """显示校准结果"""
@@ -254,7 +255,7 @@ class DeviceCalibrationWindow:
         if self.is_calibrating:
             self.is_calibrating = False
             self.calibrator.is_testing = False
-            messagebox.showwarning("超时", "校准超时（超过15秒），请检查设备连接后重试")
+            messagebox.showwarning("超时", "校准超时，可能存在设备冲突或兼容性问题")
             self.reset_buttons()
     
     def close_window(self):
