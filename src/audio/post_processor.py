@@ -224,8 +224,9 @@ class AudioPostProcessor:
         basename = os.path.basename(original_file)
         if '_' in basename:
             parts = basename.split('_')
-            if len(parts) >= 2:
-                timestamp = f"{parts[-2]}_{parts[-1].split('.')[0]}"
+            # 正确提取时间戳：对于 mic_20241220_143022_... 格式，取第2和第3部分
+            if len(parts) >= 3 and parts[1].isdigit() and parts[2].isdigit():
+                timestamp = f"{parts[1]}_{parts[2]}"
             else:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         else:
