@@ -11,9 +11,9 @@ recording:
   
 auto_recording:
   enabled: false  # 是否启用自动录制
-  volume_threshold: 0.015  # 音量阈值（0-1）
-  start_duration: 3.0  # 开始录制前的检测时长（秒）
-  end_silence_duration: 12.0  # 结束录制的静默时长（秒）
+  volume_threshold: 0.015  # 系统音频音量阈值（0-1）
+  start_duration: 3.0  # 系统音频活跃多久后开始录制（秒）
+  end_silence_duration: 12.0  # 双路音频静默多久后结束录制（秒）
   min_call_duration: 5.0  # 最短通话时长（秒）
   check_interval: 0.5  # 检测间隔（秒）
   buffer_duration: 30.0  # 循环缓冲区时长（秒）

@@ -279,11 +279,9 @@ class AutoAudioRecorder:
                 # 每10次循环输出一次状态
                 if loop_count % 20 == 0:  # 10秒输出一次
                     status = self.activity_detector.get_status()
-                    self._notify_status(f"监听状态: 麦克风活跃={status.get('mic_active', False)}, "
-                                      f"系统音频活跃={status.get('system_active', False)}, "
-                                      f"静默时长={status.get('silence_duration', 0):.1f}s, "
-                                      f"麦克风活跃时长={status.get('mic_active_duration', 0):.1f}s, "
-                                      f"系统音频活跃时长={status.get('system_active_duration', 0):.1f}s")
+                    self._notify_status(f"监听状态: 系统音频活跃={status.get('system_active', False)}, "
+                                      f"系统音频活跃时长={status.get('system_active_duration', 0):.1f}s, "
+                                      f"静默时长={status.get('silence_duration', 0):.1f}s")
                 
                 if self.state == RecordingState.MONITORING:
                     # 检查是否应该开始录制
@@ -292,7 +290,7 @@ class AutoAudioRecorder:
                         self._start_recording()
                     elif loop_count % 40 == 0:  # 每20秒输出一次检查结果
                         status = self.activity_detector.get_status()
-                        self.logger.debug(f"检查开始录制: should_start={should_start}, 阈值={self.activity_detector.start_duration}s")
+                        self.logger.debug(f"检查开始录制: should_start={should_start}, 系统音频活跃时长={status.get('system_active_duration', 0):.1f}s, 阈值={self.activity_detector.start_duration}s")
                 
                 elif self.state == RecordingState.RECORDING:
                     # 检查是否应该停止录制
@@ -327,7 +325,7 @@ class AutoAudioRecorder:
         # 标记通话开始
         self.activity_detector.start_call()
         
-        self._notify_status("🔴 自动开始录制通话")
+        self._notify_status("🔴 检测到系统音频，自动开始录制通话")
     
     def _stop_recording(self):
         """停止录制"""

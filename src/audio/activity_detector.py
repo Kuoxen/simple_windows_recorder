@@ -57,7 +57,7 @@ class AudioActivityDetector:
         return is_active
     
     def should_start_recording(self) -> bool:
-        """判断是否应该开始录制"""
+        """判断是否应该开始录制 - 只监听系统音频"""
         current_time = time.time()
         
         # 检查是否需要重置活跃状态（静默超过5秒才重置）
@@ -67,20 +67,15 @@ class AudioActivityDetector:
                 self.mic_active_start = None
                 self.system_active_start = None
         
-        # 检查是否有任意一路音频活跃超过阈值时间
-        mic_active_duration = 0
+        # 只检查系统音频活跃时间
         system_active_duration = 0
-        
-        if self.mic_active_start is not None:
-            mic_active_duration = current_time - self.mic_active_start
         
         if self.system_active_start is not None:
             system_active_duration = current_time - self.system_active_start
         
-        # 只要任意一路音频活跃超过阈值时间，就开始录制
-        max_duration = max(mic_active_duration, system_active_duration)
-        if max_duration >= self.start_duration:
-            self.logger.info(f"检测到音频活动，开始录制 - 麦克风:{mic_active_duration:.1f}s, 系统音频:{system_active_duration:.1f}s")
+        # 只要系统音频活跃超过阈值时间，就开始录制
+        if system_active_duration >= self.start_duration:
+            self.logger.info(f"检测到系统音频活动，开始录制 - 系统音频:{system_active_duration:.1f}s")
             return True
         
         return False

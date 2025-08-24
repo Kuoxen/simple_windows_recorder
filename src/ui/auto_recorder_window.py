@@ -15,7 +15,7 @@ from storage.uploader import FileUploader
 class AutoRecorderUI:
     def __init__(self):
         self.root = tk.Tk()
-        self.root.title("智能呼叫中心录音系统 - 自动录制版")
+        self.root.title("智能呼叫中心录音系统 - 系统音频触发版")
         self.root.geometry("700x650")
         
         # 配置日志
@@ -78,6 +78,13 @@ class AutoRecorderUI:
         self.auto_enabled = tk.BooleanVar(value=self.settings.auto_recording.get('enabled', False))
         ttk.Checkbutton(auto_frame, text="启用自动录制", variable=self.auto_enabled, 
                        command=self.on_auto_enabled_changed).pack(side=tk.LEFT)
+        
+        # 触发说明
+        trigger_info = tk.Frame(config_frame)
+        trigger_info.pack(fill=tk.X, pady=(2, 5))
+        info_label = ttk.Label(trigger_info, text="⚡ 触发机制：检测到系统音频有声音时自动开始录制", 
+                           foreground="blue", font=("Arial", 9))
+        info_label.pack(side=tk.LEFT)
         
         # 音量阈值
         threshold_frame = tk.Frame(config_frame)
