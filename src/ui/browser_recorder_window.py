@@ -121,8 +121,8 @@ class BrowserRecorderWindow:
         try:
             input_devices = self.device_manager.get_input_devices()
             
-            # 更新麦克风设备
-            mic_names = [f"{i}: {dev['name']}" for i, dev in enumerate(input_devices)]
+            # 更新麦克风设备 - 修复索引问题
+            mic_names = [f"{device_id}: {device['name']}" for device_id, device in input_devices]
             self.mic_combo['values'] = mic_names
             
             if mic_names:
