@@ -314,6 +314,19 @@ class BrowserAudioRecorder:
                 result['browser_file'] = browser_file
                 result['browser_success'] = True
         
+        # 提交后处理
+        if result.get('mic_success') or result.get('browser_success'):
+            try:
+                from .post_processor import AudioPostProcessor
+                post_processor = AudioPostProcessor(self.settings)
+                post_processor.submit_recording(
+                    result.get('mic_file'),
+                    result.get('browser_file'),
+                    self.call_info
+                )
+            except Exception as e:
+                self._notify_status(f"后处理提交失败: {e}")
+        
         return result
     
     def _save_audio_file(self, data: list, filename: str) -> Optional[str]:
@@ -362,3 +375,9 @@ class BrowserAudioRecorder:
                 status['recording_duration'] = (datetime.now() - self.recording_start_time).total_seconds()
         
         return status
+    
+    def update_config(self, key: str, value: Any):
+        """更新配置"""
+        if hasattr(self.activity_detector, key):
+            setattr(self.activity_detector, key, value)
+            self.settings.update_auto_recording(key, value)

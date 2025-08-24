@@ -43,9 +43,13 @@ class WASAPIRecorder:
     def _init_com(self):
         """初始化COM"""
         try:
-            ctypes.windll.ole32.CoInitialize(None)
-            self._com_initialized = True
-            self.logger.info("COM初始化成功")
+            import platform
+            if platform.system() == "Windows":
+                ctypes.windll.ole32.CoInitialize(None)
+                self._com_initialized = True
+                self.logger.info("COM初始化成功")
+            else:
+                self.logger.info(f"非Windows系统({platform.system()})，跳过COM初始化")
         except Exception as e:
             self.logger.error(f"COM初始化失败: {e}")
     
@@ -53,6 +57,11 @@ class WASAPIRecorder:
         """获取浏览器音频会话"""
         sessions = []
         try:
+            import platform
+            if platform.system() != "Windows":
+                self.logger.info(f"非Windows系统({platform.system()})，浏览器音频采集不可用")
+                return sessions
+            
             # 使用psutil简化实现
             import psutil
             for proc in psutil.process_iter(['pid', 'name']):
@@ -82,6 +91,11 @@ class WASAPIRecorder:
     def start_recording(self) -> bool:
         """开始录制"""
         if self._recording:
+            return False
+        
+        import platform
+        if platform.system() != "Windows":
+            self.logger.warning(f"非Windows系统({platform.system()})，WASAPI录制不可用")
             return False
         
         self._recording = True
