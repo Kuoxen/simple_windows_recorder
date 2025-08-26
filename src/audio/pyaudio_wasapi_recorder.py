@@ -52,7 +52,37 @@ class PyaudioWasapiLoopbackRecorder:
 
             device_index = int(self._device_info['index'])
             channels = int(self.channels or self._device_info.get('maxInputChannels', 2) or 2)
-            rate = int(self.sample_rate or int(self._device_info.get('defaultSampleRate', 44100)))
+
+            # 优先尝试设备默认采样率，其次尝试常见可用采样率，使用 PortAudio 能力探测
+            candidate_rates = []
+            try:
+                default_rate = int(self._device_info.get('defaultSampleRate'))
+                if default_rate:
+                    candidate_rates.append(default_rate)
+            except Exception:
+                pass
+            # 如果外部指定了期望采样率，优先尝试
+            if self.sample_rate and self.sample_rate not in candidate_rates:
+                candidate_rates.insert(0, int(self.sample_rate))
+            for r in [48000, 44100, 32000, 22050, 16000]:
+                if r not in candidate_rates:
+                    candidate_rates.append(r)
+
+            rate = None
+            for r in candidate_rates:
+                try:
+                    if self._pyaudio.is_format_supported(
+                        rate=r,
+                        input_device=device_index,
+                        input_channels=channels,
+                        input_format=pyaudio.paInt16,
+                    ):
+                        rate = r
+                        break
+                except Exception:
+                    continue
+            if rate is None:
+                return False
 
             # 使用非阻塞回调流
             def _on_frames(in_data, frame_count, time_info, status):

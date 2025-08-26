@@ -19,8 +19,9 @@ class EnhancedWASAPIRecorder:
         self._audio_callback: Optional[Callable[[np.ndarray], None]] = None
         
         # 音频捕获方式
-        self._capture_method = None  # 'wasapi', 'sounddevice', 'silence'
+        self._capture_method = None  # 'pyaudio', 'wasapi', 'sounddevice', 'mic_only'
         self._stream = None
+        self._pyaudio_recorder = None
         
         # 设备信息
         self.mic_device = None
@@ -123,22 +124,44 @@ class EnhancedWASAPIRecorder:
         # 尝试不同的音频捕获方式
         capture_success = False
         
-        # 1. 优先尝试WASAPI Loopback
-        if platform.system() == "Windows":
+        # 1. 优先尝试 PyAudioWPatch WASAPI loopback（无需立体声混音/虚拟声卡）
+        if platform.system() == "Windows" and not capture_success:
+            try:
+                from audio.pyaudio_wasapi_recorder import PyaudioWasapiLoopbackRecorder
+                self._pyaudio_recorder = PyaudioWasapiLoopbackRecorder(
+                    sample_rate=self.settings.audio['sample_rate'],
+                    channels=2
+                )
+                def on_system_audio(chunk: np.ndarray):
+                    if self._recording and len(chunk) > 0:
+                        self.recording_system_data.extend(chunk.astype(np.float32))
+                self._pyaudio_recorder.set_audio_callback(on_system_audio)
+                if self._pyaudio_recorder.start_recording():
+                    self._capture_method = 'pyaudio'
+                    capture_success = True
+                    self._notify_status("✅ 使用WASAPI Loopback (PyAudioWPatch)")
+                else:
+                    self._pyaudio_recorder = None
+            except Exception as e:
+                self.logger.error(f"PyAudioWPatch 初始化失败: {e}")
+                self._pyaudio_recorder = None
+
+        # 2. 次优尝试 sounddevice 的“WASAPI-like”方案
+        if platform.system() == "Windows" and not capture_success:
             if self._init_wasapi_loopback():
                 capture_success = self._start_wasapi_capture()
                 if capture_success:
                     self._capture_method = 'wasapi'
-                    self._notify_status("✅ 使用WASAPI Loopback模式 - 无需立体声混音")
+                    self._notify_status("✅ 使用WASAPI Loopback (sounddevice)")
         
-        # 2. Fallback到sounddevice立体声混音
+        # 3. Fallback到sounddevice立体声混音
         if not capture_success:
             if self._init_sounddevice_fallback():
                 capture_success = self._start_sounddevice_capture()
                 if capture_success:
                     self._capture_method = 'sounddevice'
         
-        # 3. 最后fallback到纯麦克风模式
+        # 4. 最后fallback到纯麦克风模式
         if not capture_success:
             capture_success = self._start_mic_only_capture()
             if capture_success:
@@ -290,6 +313,15 @@ class EnhancedWASAPIRecorder:
             except:
                 pass
         
+        # 停止 PyAudioWPatch 录制
+        if self._pyaudio_recorder:
+            try:
+                self._pyaudio_recorder.stop_recording()
+            except:
+                pass
+            finally:
+                self._pyaudio_recorder = None
+
         if hasattr(self, '_mic_stream') and self._mic_stream:
             try:
                 self._mic_stream.stop()
