@@ -365,16 +365,36 @@ class EnhancedWASAPIRecorder:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         sample_rate = int(self.settings.audio['sample_rate'])
         
+        # 以麦克风长度作为对齐基准；若无麦克风数据，再退回按时长估算
+        mic_frame_len = len(self.recording_mic_data) if self.recording_mic_data else 0
+        if mic_frame_len > 0:
+            expected_frames = mic_frame_len
+        else:
+            expected_frames = max(1, int(duration * (
+                self._pyaudio_recorder.get_actual_rate() if self._capture_method == 'pyaudio' and self._pyaudio_recorder else sample_rate
+            )))
+        
         if self.recording_mic_data:
+            # mic 作为基准：不补前置静音，不强行裁剪
+            mic_aligned = np.asarray(self.recording_mic_data, dtype=np.float32)
             mic_file_tmp = os.path.join(output_dir, f"tmp_mic_{timestamp}.wav")
-            if self._save_audio_file(self.recording_mic_data, mic_file_tmp, sample_rate):
+            if self._save_audio_file(mic_aligned, mic_file_tmp, sample_rate):
                 mic_file = mic_file_tmp
                 mic_success = True
                 self._notify_status(f"✅ 麦克风文件保存成功: {os.path.basename(mic_file)}")
         
         if self.recording_system_data:
+            # system 按 mic 长度对齐：前置补零到 expected_frames，若更长则截断
+            sys_arr = np.asarray(self.recording_system_data, dtype=np.float32)
+            if len(sys_arr) < expected_frames:
+                pad = expected_frames - len(sys_arr)
+                system_aligned = np.concatenate([np.zeros(pad, dtype=np.float32), sys_arr])
+            elif len(sys_arr) > expected_frames:
+                system_aligned = sys_arr[:expected_frames]
+            else:
+                system_aligned = sys_arr
             speaker_file_tmp = os.path.join(output_dir, f"tmp_system_{timestamp}.wav")
-            if self._save_audio_file(self.recording_system_data, speaker_file_tmp, sample_rate):
+            if self._save_audio_file(system_aligned, speaker_file_tmp, sample_rate):
                 speaker_file = speaker_file_tmp
                 speaker_success = True
                 self._notify_status(f"✅ 系统音频文件保存成功: {os.path.basename(speaker_file)}")
@@ -407,6 +427,19 @@ class EnhancedWASAPIRecorder:
         except Exception as e:
             self.logger.error(f"保存音频文件失败 {filepath}: {e}")
             return False
+
+    def _align_to_expected_length(self, data: list, expected_frames: int) -> np.ndarray:
+        """将数据前置补零/截断到期望长度。
+        - 目的：当某一路（常见为系统环回）在录音开始后才有数据，导致长度短于整段时长；
+          这里在前面补零，使两路以“点击开始录音”为时间零点对齐。
+        """
+        audio = np.asarray(data, dtype=np.float32)
+        if len(audio) >= expected_frames:
+            return audio[:expected_frames]
+        pad = expected_frames - len(audio)
+        if pad > 0:
+            return np.concatenate([np.zeros(pad, dtype=np.float32), audio])
+        return audio
     
     def get_recording_status(self) -> Dict[str, Any]:
         """获取录制状态"""

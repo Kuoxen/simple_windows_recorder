@@ -21,6 +21,7 @@ class PyaudioWasapiLoopbackRecorder:
         self._device_info = None
         self._running = False
         self._thread: Optional[threading.Thread] = None
+        self._actual_rate: Optional[int] = None
 
     def set_audio_callback(self, callback: Callable[[np.ndarray], None]):
         self._callback = callback
@@ -114,6 +115,7 @@ class PyaudioWasapiLoopbackRecorder:
                 frames_per_buffer=1024,
                 stream_callback=_on_frames,
             )
+            self._actual_rate = rate
 
             self._running = True
             self._stream.start_stream()
@@ -151,5 +153,8 @@ class PyaudioWasapiLoopbackRecorder:
             pass
         finally:
             self._pyaudio = None
+
+    def get_actual_rate(self) -> Optional[int]:
+        return self._actual_rate
 
 
