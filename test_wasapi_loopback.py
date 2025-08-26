@@ -200,7 +200,35 @@ def test_wasapi_loopback():
 
                 device_index = int(loop_info['index'])
                 channels = int(loop_info.get('maxInputChannels', 2) or 2)
-                rate = int(samplerate or int(loop_info.get('defaultSampleRate', 44100)))
+                # 优先使用 loopback 设备自己的默认采样率，其次尝试常见可用采样率
+                candidate_rates = []
+                try:
+                    candidate_rates.append(int(loop_info.get('defaultSampleRate')))
+                except Exception:
+                    pass
+                # 去重并附加常见备选
+                for r in [48000, 44100, 32000, 22050, 16000]:
+                    if r not in candidate_rates:
+                        candidate_rates.append(r)
+
+                # 选择一个支持的采样率
+                rate = None
+                for r in candidate_rates:
+                    try:
+                        if p.is_format_supported(
+                            rate=r,
+                            input_device=device_index,
+                            input_channels=channels,
+                            input_format=pyaudio.paInt16,
+                        ):
+                            rate = r
+                            break
+                    except Exception:
+                        continue
+
+                if rate is None:
+                    raise RuntimeError(f"no_supported_rate_for_device_{device_index}")
+                print(f"使用采样率: {rate} Hz, 通道: {channels}")
 
                 def _on_frames(in_data, frame_count, time_info, status):
                     if in_data:
@@ -246,7 +274,7 @@ def test_wasapi_loopback():
                 with wave.open(filename, 'wb') as wf:
                     wf.setnchannels(1)
                     wf.setsampwidth(2)
-                    wf.setframerate(samplerate)
+                    wf.setframerate(rate)
                     wf.writeframes(b''.join(frames_collected))
                 print(f"✅ 方法3成功！保存为: {filename}")
                 return True
