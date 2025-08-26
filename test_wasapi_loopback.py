@@ -118,7 +118,11 @@ def test_wasapi_loopback():
         # 方法2: 不依赖 WasapiSettings，扫描可用的 loopback/混音 输入设备直接录制
         print("\n尝试方法2: 扫描 loopback 输入设备并直接录制...")
         try:
-            stereo_mix_keywords = ['loopback', 'stereo mix', '立体声混音', 'what u hear', 'wave out mix', 'mix']
+            stereo_mix_keywords = [
+                'stereo mix', '立体声混音', 'what u hear', 'wave out mix', 'mix',
+                'vb-cable', 'cable input', 'cable output', 'voicemeeter', 'virtual cable',
+                'loopback'  # 不是必须，但有些设备会包含
+            ]
             candidate_id = None
             for i, dev in enumerate(devices):
                 name = str(dev.get('name', '')).lower()
@@ -157,8 +161,42 @@ def test_wasapi_loopback():
         except Exception as e:
             print(f"❌ 方法2失败: {e}")
 
-        # 方法3: 使用项目内置的底层 WASAPI 录制器（无需立体声混音）
-        print("\n尝试方法3: 使用内置 WASAPIRecorder（底层WASAPI Loopback）...")
+        # 方法3: 使用 PyAudioWPatch 的 WASAPI loopback（无需立体声混音/虚拟设备）
+        print("\n尝试方法3: 使用 PyAudioWPatch WASAPI Loopback...")
+        try:
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+            from audio.pyaudio_wasapi_recorder import PyaudioWasapiLoopbackRecorder
+
+            duration = 3
+            frames_collected = []
+
+            def on_audio(chunk: np.ndarray):
+                frames_collected.append((chunk * 32767).astype(np.int16).tobytes())
+
+            pwr = PyaudioWasapiLoopbackRecorder(sample_rate=samplerate, channels=2)
+            if not pwr.start_recording():
+                print("❌ PyAudioWPatch 启动失败或不可用")
+            else:
+                print(f"开始录制系统音频 {duration} 秒（PyAudioWPatch）...")
+                time.sleep(duration)
+                pwr.stop_recording()
+
+                if frames_collected:
+                    filename = "wasapi_pyaudio_test.wav"
+                    with wave.open(filename, 'wb') as wf:
+                        wf.setnchannels(1)
+                        wf.setsampwidth(2)
+                        wf.setframerate(samplerate)
+                        wf.writeframes(b''.join(frames_collected))
+                    print(f"✅ 方法3成功！保存为: {filename}")
+                    return True
+                else:
+                    print("⚠️ 方法3未采集到音频帧")
+        except Exception as e:
+            print(f"❌ 方法3失败: {e}")
+
+        # 方法4: 使用项目内置的底层 WASAPI 录制器（无需立体声混音）
+        print("\n尝试方法4: 使用内置 WASAPIRecorder（底层WASAPI Loopback）...")
         try:
             sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
             from audio.wasapi_recorder import WASAPIRecorder
@@ -192,7 +230,7 @@ def test_wasapi_loopback():
                 else:
                     print("⚠️ 方法3未采集到音频帧")
         except Exception as e:
-            print(f"❌ 方法3失败: {e}")
+            print(f"❌ 方法4失败: {e}")
 
         print("❌ 所有WASAPI Loopback方法都失败")
         return False
