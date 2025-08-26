@@ -151,6 +151,12 @@ class EnhancedWASAPIRecorder:
                     self._capture_method = 'pyaudio'
                     capture_success = True
                     self._notify_status("✅ 使用WASAPI Loopback (PyAudioWPatch)")
+                    # 同时启动麦克风流（若用户选择了具体麦克风设备）
+                    if self.mic_device is not None and self.mic_device >= 0:
+                        try:
+                            self._start_mic_stream()
+                        except Exception as e:
+                            self.logger.error(f"麦克风流启动失败: {e}")
                 else:
                     self._pyaudio_recorder = None
             except Exception as e:
