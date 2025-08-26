@@ -164,34 +164,94 @@ def test_wasapi_loopback():
         # 方法3: 使用 PyAudioWPatch 的 WASAPI loopback（无需立体声混音/虚拟设备）
         print("\n尝试方法3: 使用 PyAudioWPatch WASAPI Loopback...")
         try:
-            sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
-            from audio.pyaudio_wasapi_recorder import PyaudioWasapiLoopbackRecorder
+            try:
+                import pyaudiowpatch as pyaudio
+                print(f"PyAudioWPatch 版本: {getattr(pyaudio, '__version__', 'unknown')}")
+            except Exception as e_imp:
+                print(f"❌ 无法导入 PyAudioWPatch: {e_imp!r}")
+                raise
 
+            p = None
+            stream = None
             duration = 3
             frames_collected = []
 
-            def on_audio(chunk: np.ndarray):
-                frames_collected.append((chunk * 32767).astype(np.int16).tobytes())
+            try:
+                p = pyaudio.PyAudio()
+                loop_info = None
+                try:
+                    loop_info = p.get_default_wasapi_loopback()
+                    print(f"默认WASAPI Loopback设备: index={loop_info.get('index')} name={loop_info.get('name')}")
+                except Exception as e_def:
+                    print(f"⚠️ 获取默认 loopback 设备失败: {e_def!r}")
 
-            pwr = PyaudioWasapiLoopbackRecorder(sample_rate=samplerate, channels=2)
-            if not pwr.start_recording():
-                print("❌ PyAudioWPatch 启动失败或不可用")
-            else:
+                if not loop_info:
+                    # 扫描 isLoopback 设备
+                    for i in range(p.get_device_count()):
+                        info = p.get_device_info_by_index(i)
+                        if info.get('isLoopback') and info.get('maxInputChannels', 0) > 0:
+                            loop_info = info
+                            print(f"发现 loopback 设备: index={info.get('index')} name={info.get('name')}")
+                            break
+
+                if not loop_info:
+                    print("❌ 未找到任何 WASAPI loopback 设备")
+                    raise RuntimeError("no_wasapi_loopback_device")
+
+                device_index = int(loop_info['index'])
+                channels = int(loop_info.get('maxInputChannels', 2) or 2)
+                rate = int(samplerate or int(loop_info.get('defaultSampleRate', 44100)))
+
+                def _on_frames(in_data, frame_count, time_info, status):
+                    if in_data:
+                        audio = np.frombuffer(in_data, dtype=np.int16).astype(np.float32) / 32768.0
+                        if channels > 1 and len(audio) % channels == 0:
+                            audio = audio.reshape(-1, channels).mean(axis=1)
+                        frames_collected.append((audio * 32767).astype(np.int16).tobytes())
+                    return (None, pyaudio.paContinue)
+
+                stream = p.open(
+                    format=pyaudio.paInt16,
+                    channels=channels,
+                    rate=rate,
+                    input=True,
+                    input_device_index=device_index,
+                    frames_per_buffer=1024,
+                    stream_callback=_on_frames,
+                )
+                stream.start_stream()
                 print(f"开始录制系统音频 {duration} 秒（PyAudioWPatch）...")
                 time.sleep(duration)
-                pwr.stop_recording()
+            except Exception as e_start:
+                print(f"❌ PyAudioWPatch 录制启动失败: {e_start!r}")
+            finally:
+                try:
+                    if stream and stream.is_active():
+                        stream.stop_stream()
+                except Exception:
+                    pass
+                try:
+                    if stream:
+                        stream.close()
+                except Exception:
+                    pass
+                try:
+                    if p:
+                        p.terminate()
+                except Exception:
+                    pass
 
-                if frames_collected:
-                    filename = "wasapi_pyaudio_test.wav"
-                    with wave.open(filename, 'wb') as wf:
-                        wf.setnchannels(1)
-                        wf.setsampwidth(2)
-                        wf.setframerate(samplerate)
-                        wf.writeframes(b''.join(frames_collected))
-                    print(f"✅ 方法3成功！保存为: {filename}")
-                    return True
-                else:
-                    print("⚠️ 方法3未采集到音频帧")
+            if frames_collected:
+                filename = "wasapi_pyaudio_test.wav"
+                with wave.open(filename, 'wb') as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(samplerate)
+                    wf.writeframes(b''.join(frames_collected))
+                print(f"✅ 方法3成功！保存为: {filename}")
+                return True
+            else:
+                print("⚠️ 方法3未采集到音频帧")
         except Exception as e:
             print(f"❌ 方法3失败: {e}")
 
