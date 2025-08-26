@@ -33,6 +33,9 @@ class EnhancedWASAPIRecorder:
         self.recording_mic_data = []
         self.recording_system_data = []
         self.recording_start_time = None
+        self._start_time_monotonic = None
+        self._mic_first_time = None
+        self._system_first_time = None
         
     def set_status_callback(self, callback: Callable[[str], None]):
         """设置状态回调"""
@@ -144,6 +147,11 @@ class EnhancedWASAPIRecorder:
                     preferred_device_index=preferred_idx
                 )
                 def on_system_audio(chunk: np.ndarray):
+                    if self._system_first_time is None:
+                        try:
+                            self._system_first_time = time.perf_counter()
+                        except Exception:
+                            self._system_first_time = None
                     if self._recording and len(chunk) > 0:
                         self.recording_system_data.extend(chunk.astype(np.float32))
                 self._pyaudio_recorder.set_audio_callback(on_system_audio)
@@ -188,6 +196,10 @@ class EnhancedWASAPIRecorder:
         if capture_success:
             self._recording = True
             self.recording_start_time = datetime.now()
+            try:
+                self._start_time_monotonic = time.perf_counter()
+            except Exception:
+                self._start_time_monotonic = None
             self._notify_status(f"录制开始 - 模式: {self._capture_method}")
             return True
         else:
@@ -297,6 +309,11 @@ class EnhancedWASAPIRecorder:
                     self.logger.warning(f"麦克风状态: {status}")
                 
                 if self._recording and len(indata) > 0:
+                    if self._mic_first_time is None:
+                        try:
+                            self._mic_first_time = time.perf_counter()
+                        except Exception:
+                            self._mic_first_time = None
                     audio_data = indata[:, 0] if indata.shape[1] > 0 else np.zeros(frames)
                     self.recording_mic_data.extend(audio_data)
             
@@ -384,8 +401,30 @@ class EnhancedWASAPIRecorder:
                 self._notify_status(f"✅ 麦克风文件保存成功: {os.path.basename(mic_file)}")
         
         if self.recording_system_data:
-            # system 按 mic 长度对齐：前置补零到 expected_frames，若更长则截断
+            # 若系统流采样率与目标不同，先重采样到目标采样率
             sys_arr = np.asarray(self.recording_system_data, dtype=np.float32)
+            sys_rate = sample_rate
+            if self._capture_method == 'pyaudio' and self._pyaudio_recorder and self._pyaudio_recorder.get_actual_rate():
+                sys_rate = int(self._pyaudio_recorder.get_actual_rate())
+            if sys_rate != sample_rate and sys_arr.size > 0:
+                sys_arr = self._resample_linear(sys_arr, sys_rate, sample_rate)
+
+            # 计算实际起始偏移：以“mic 首帧”与“system 首帧”的到达时间差为准
+            prepend_frames = 0
+            try:
+                if self._mic_first_time is not None and self._system_first_time is not None:
+                    offset_sec = max(0.0, self._system_first_time - self._mic_first_time)
+                    prepend_frames = int(round(offset_sec * sample_rate))
+                elif self._start_time_monotonic is not None and self._system_first_time is not None:
+                    offset_sec = max(0.0, self._system_first_time - self._start_time_monotonic)
+                    prepend_frames = int(round(offset_sec * sample_rate))
+            except Exception:
+                prepend_frames = 0
+
+            if prepend_frames > 0:
+                sys_arr = np.concatenate([np.zeros(prepend_frames, dtype=np.float32), sys_arr])
+
+            # 最终按 mic 长度对齐：不足补零到 expected_frames，超过则截断
             if len(sys_arr) < expected_frames:
                 pad = expected_frames - len(sys_arr)
                 system_aligned = np.concatenate([np.zeros(pad, dtype=np.float32), sys_arr])
@@ -440,6 +479,18 @@ class EnhancedWASAPIRecorder:
         if pad > 0:
             return np.concatenate([np.zeros(pad, dtype=np.float32), audio])
         return audio
+
+    def _resample_linear(self, data: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:
+        """简单线性重采样，避免采样率不一致导致的时长误差。"""
+        if from_rate == to_rate or data.size == 0:
+            return data.astype(np.float32)
+        ratio = float(to_rate) / float(from_rate)
+        new_len = int(round(data.size * ratio))
+        if new_len <= 0:
+            return np.zeros(0, dtype=np.float32)
+        x_old = np.linspace(0.0, 1.0, num=data.size, endpoint=False, dtype=np.float64)
+        x_new = np.linspace(0.0, 1.0, num=new_len, endpoint=False, dtype=np.float64)
+        return np.interp(x_new, x_old, data.astype(np.float64)).astype(np.float32)
     
     def get_recording_status(self) -> Dict[str, Any]:
         """获取录制状态"""
