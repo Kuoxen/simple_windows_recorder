@@ -92,14 +92,23 @@ class WASAPIRecorder:
             
             self._device_enumerator = device_enumerator
             
-            # 获取默认音频渲染设备
+            # 获取默认音频渲染设备 - 使用vtable调用
             device = ctypes.c_void_p()
-            hr = ctypes.windll.ole32.IMMDeviceEnumerator_GetDefaultAudioEndpoint(
-                device_enumerator,
-                0,  # eRender
-                0,  # eConsole
-                byref(device)
-            )
+            # IMMDeviceEnumerator::GetDefaultAudioEndpoint 在vtable中的位置是3
+            get_default_endpoint = ctypes.WINFUNCTYPE(
+                wintypes.HRESULT,
+                ctypes.c_void_p,  # this
+                ctypes.c_int,     # dataFlow
+                ctypes.c_int,     # role
+                ctypes.POINTER(ctypes.c_void_p)  # ppEndpoint
+            )(3, "GetDefaultAudioEndpoint")
+            
+            # 从vtable获取函数指针
+            vtable = ctypes.cast(device_enumerator, ctypes.POINTER(ctypes.c_void_p)).contents
+            vtable_array = ctypes.cast(vtable, ctypes.POINTER(ctypes.c_void_p * 10)).contents
+            get_default_func = ctypes.cast(vtable_array[3], get_default_endpoint)
+            
+            hr = get_default_func(device_enumerator, 0, 0, byref(device))
             
             if hr != 0:
                 self.logger.error(f"获取默认渲染设备失败: {hr}")
@@ -107,15 +116,23 @@ class WASAPIRecorder:
             
             self._device = device
             
-            # 激活音频客户端
+            # 激活音频客户端 - 使用vtable调用
             audio_client = ctypes.c_void_p()
-            hr = ctypes.windll.ole32.IMMDevice_Activate(
-                device,
-                byref(IID_IAudioClient),
-                CLSCTX_ALL,
-                None,
-                byref(audio_client)
+            # IMMDevice::Activate 在vtable中的位置是3
+            activate_func_type = ctypes.WINFUNCTYPE(
+                wintypes.HRESULT,
+                ctypes.c_void_p,  # this
+                ctypes.POINTER(GUID),  # iid
+                wintypes.DWORD,   # dwClsCtx
+                ctypes.c_void_p,  # pActivationParams
+                ctypes.POINTER(ctypes.c_void_p)  # ppInterface
             )
+            
+            device_vtable = ctypes.cast(device, ctypes.POINTER(ctypes.c_void_p)).contents
+            device_vtable_array = ctypes.cast(device_vtable, ctypes.POINTER(ctypes.c_void_p * 10)).contents
+            activate_func = ctypes.cast(device_vtable_array[3], activate_func_type)
+            
+            hr = activate_func(device, byref(IID_IAudioClient), CLSCTX_ALL, None, byref(audio_client))
             
             if hr != 0:
                 self.logger.error(f"激活音频客户端失败: {hr}")
@@ -123,19 +140,40 @@ class WASAPIRecorder:
             
             self._audio_client = audio_client
             
-            # 获取混合格式
+            # 获取混合格式 - 使用vtable调用
             wave_format_ptr = ctypes.c_void_p()
-            hr = ctypes.windll.ole32.IAudioClient_GetMixFormat(
-                audio_client,
-                byref(wave_format_ptr)
+            # IAudioClient::GetMixFormat 在vtable中的位置是8
+            get_mix_format_type = ctypes.WINFUNCTYPE(
+                wintypes.HRESULT,
+                ctypes.c_void_p,  # this
+                ctypes.POINTER(ctypes.c_void_p)  # ppDeviceFormat
             )
+            
+            client_vtable = ctypes.cast(audio_client, ctypes.POINTER(ctypes.c_void_p)).contents
+            client_vtable_array = ctypes.cast(client_vtable, ctypes.POINTER(ctypes.c_void_p * 20)).contents
+            get_mix_format_func = ctypes.cast(client_vtable_array[8], get_mix_format_type)
+            
+            hr = get_mix_format_func(audio_client, byref(wave_format_ptr))
             
             if hr != 0:
                 self.logger.error(f"获取混合格式失败: {hr}")
                 return False
             
-            # 初始化音频客户端（Loopback模式）
-            hr = ctypes.windll.ole32.IAudioClient_Initialize(
+            # 初始化音频客户端（Loopback模式）- 使用vtable调用
+            # IAudioClient::Initialize 在vtable中的位置是3
+            initialize_type = ctypes.WINFUNCTYPE(
+                wintypes.HRESULT,
+                ctypes.c_void_p,  # this
+                ctypes.c_int,     # ShareMode
+                wintypes.DWORD,   # StreamFlags
+                ctypes.c_longlong,  # hnsBufferDuration
+                ctypes.c_longlong,  # hnsPeriodicity
+                ctypes.c_void_p,  # pFormat
+                ctypes.c_void_p   # AudioSessionGuid
+            )
+            
+            initialize_func = ctypes.cast(client_vtable_array[3], initialize_type)
+            hr = initialize_func(
                 audio_client,
                 AUDCLNT_SHAREMODE_SHARED,
                 AUDCLNT_STREAMFLAGS_LOOPBACK,
@@ -149,13 +187,18 @@ class WASAPIRecorder:
                 self.logger.error(f"初始化音频客户端失败: {hr}")
                 return False
             
-            # 获取捕获客户端
+            # 获取捕获客户端 - 使用vtable调用
             capture_client = ctypes.c_void_p()
-            hr = ctypes.windll.ole32.IAudioClient_GetService(
-                audio_client,
-                byref(IID_IAudioCaptureClient),
-                byref(capture_client)
+            # IAudioClient::GetService 在vtable中的位置是14
+            get_service_type = ctypes.WINFUNCTYPE(
+                wintypes.HRESULT,
+                ctypes.c_void_p,  # this
+                ctypes.POINTER(GUID),  # riid
+                ctypes.POINTER(ctypes.c_void_p)  # ppv
             )
+            
+            get_service_func = ctypes.cast(client_vtable_array[14], get_service_type)
+            hr = get_service_func(audio_client, byref(IID_IAudioCaptureClient), byref(capture_client))
             
             if hr != 0:
                 self.logger.error(f"获取捕获客户端失败: {hr}")
@@ -211,9 +254,15 @@ class WASAPIRecorder:
             self.logger.error("WASAPI Loopback初始化失败")
             return False
         
-        # 启动音频客户端
+        # 启动音频客户端 - 使用vtable调用
         try:
-            hr = ctypes.windll.ole32.IAudioClient_Start(self._audio_client)
+            # IAudioClient::Start 在vtable中的位置是5
+            start_type = ctypes.WINFUNCTYPE(wintypes.HRESULT, ctypes.c_void_p)
+            client_vtable = ctypes.cast(self._audio_client, ctypes.POINTER(ctypes.c_void_p)).contents
+            client_vtable_array = ctypes.cast(client_vtable, ctypes.POINTER(ctypes.c_void_p * 20)).contents
+            start_func = ctypes.cast(client_vtable_array[5], start_type)
+            
+            hr = start_func(self._audio_client)
             if hr != 0:
                 self.logger.error(f"启动音频客户端失败: {hr}")
                 return False
@@ -235,10 +284,15 @@ class WASAPIRecorder:
         
         self._recording = False
         
-        # 停止音频客户端
+        # 停止音频客户端 - 使用vtable调用
         if self._audio_client:
             try:
-                ctypes.windll.ole32.IAudioClient_Stop(self._audio_client)
+                # IAudioClient::Stop 在vtable中的位置是6
+                stop_type = ctypes.WINFUNCTYPE(wintypes.HRESULT, ctypes.c_void_p)
+                client_vtable = ctypes.cast(self._audio_client, ctypes.POINTER(ctypes.c_void_p)).contents
+                client_vtable_array = ctypes.cast(client_vtable, ctypes.POINTER(ctypes.c_void_p * 20)).contents
+                stop_func = ctypes.cast(client_vtable_array[6], stop_type)
+                stop_func(self._audio_client)
             except:
                 pass
         
@@ -263,12 +317,20 @@ class WASAPIRecorder:
         
         while self._recording:
             try:
-                # 获取可用的音频包数量
+                # 获取可用的音频包数量 - 使用vtable调用
                 packet_length = ctypes.c_uint32()
-                hr = ctypes.windll.ole32.IAudioCaptureClient_GetNextPacketSize(
-                    self._capture_client,
-                    byref(packet_length)
+                # IAudioCaptureClient::GetNextPacketSize 在vtable中的位置是4
+                get_packet_size_type = ctypes.WINFUNCTYPE(
+                    wintypes.HRESULT,
+                    ctypes.c_void_p,
+                    ctypes.POINTER(ctypes.c_uint32)
                 )
+                
+                capture_vtable = ctypes.cast(self._capture_client, ctypes.POINTER(ctypes.c_void_p)).contents
+                capture_vtable_array = ctypes.cast(capture_vtable, ctypes.POINTER(ctypes.c_void_p * 10)).contents
+                get_packet_size_func = ctypes.cast(capture_vtable_array[4], get_packet_size_type)
+                
+                hr = get_packet_size_func(self._capture_client, byref(packet_length))
                 
                 if hr != 0:
                     time.sleep(0.001)
@@ -278,12 +340,24 @@ class WASAPIRecorder:
                     time.sleep(0.001)
                     continue
                 
-                # 获取音频数据
+                # 获取音频数据 - 使用vtable调用
                 data_ptr = ctypes.POINTER(ctypes.c_byte)()
                 num_frames = ctypes.c_uint32()
                 flags = ctypes.c_uint32()
                 
-                hr = ctypes.windll.ole32.IAudioCaptureClient_GetBuffer(
+                # IAudioCaptureClient::GetBuffer 在vtable中的位置是3
+                get_buffer_type = ctypes.WINFUNCTYPE(
+                    wintypes.HRESULT,
+                    ctypes.c_void_p,
+                    ctypes.POINTER(ctypes.POINTER(ctypes.c_byte)),
+                    ctypes.POINTER(ctypes.c_uint32),
+                    ctypes.POINTER(ctypes.c_uint32),
+                    ctypes.c_void_p,
+                    ctypes.c_void_p
+                )
+                
+                get_buffer_func = ctypes.cast(capture_vtable_array[3], get_buffer_type)
+                hr = get_buffer_func(
                     self._capture_client,
                     byref(data_ptr),
                     byref(num_frames),
@@ -326,11 +400,16 @@ class WASAPIRecorder:
                 except Exception as e:
                     self.logger.error(f"音频数据处理错误: {e}")
                 
-                # 释放缓冲区
-                ctypes.windll.ole32.IAudioCaptureClient_ReleaseBuffer(
-                    self._capture_client,
-                    num_frames
+                # 释放缓冲区 - 使用vtable调用
+                # IAudioCaptureClient::ReleaseBuffer 在vtable中的位置是5
+                release_buffer_type = ctypes.WINFUNCTYPE(
+                    wintypes.HRESULT,
+                    ctypes.c_void_p,
+                    ctypes.c_uint32
                 )
+                
+                release_buffer_func = ctypes.cast(capture_vtable_array[5], release_buffer_type)
+                release_buffer_func(self._capture_client, num_frames)
                 
             except Exception as e:
                 self.logger.error(f"录制循环错误: {e}")
