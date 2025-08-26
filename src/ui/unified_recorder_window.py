@@ -283,13 +283,13 @@ class UnifiedRecorderUI:
                 status = "✅" if available else "❌"
                 mic_options.append(f"{status} [{device_id}] {device['name']}")
             
-            # 加载系统音频设备
+            # 加载系统音频设备（优先仅显示 WASAPI loopback；无则回退到旧逻辑）
             system_options = []
             used_pyaudio = False
+            default_idx = None
             try:
                 import platform
                 if platform.system() == 'Windows':
-                    # 优先使用 PyAudioWPatch 枚举所有 WASAPI loopback 设备
                     try:
                         import pyaudiowpatch as pyaudio
                         p = pyaudio.PyAudio()
@@ -299,12 +299,12 @@ class UnifiedRecorderUI:
                         except Exception:
                             default_loop = None
                         default_idx = default_loop.get('index') if default_loop else None
+                        # 枚举所有 loopback 设备
                         for i in range(p.get_device_count()):
                             info = p.get_device_info_by_index(i)
                             if info.get('isLoopback') and info.get('maxInputChannels', 0) > 0:
-                                tag = '✅'  # 可见即认为可用
                                 name = info.get('name', f'Device {i}')
-                                system_options.append(f"{tag} [PA:{i}] {name}")
+                                system_options.append(f"✅ [PA:{i}] {name}")
                         used_pyaudio = len(system_options) > 0
                     except Exception:
                         used_pyaudio = False
@@ -331,26 +331,24 @@ class UnifiedRecorderUI:
                         break
             
             # 选择项：
-            # - 如果使用了 PyAudio 列出 loopback，则默认选择“默认输出”的环回（若存在），否则第一项
-            # - 否则（没有 loopback），选择推荐项
+            # - 有 PyAudio loopback 时：仅显示它们，且默认选中 OS 默认输出的环回（若能识别），否则第一项
+            # - 无 PyAudio loopback：回退到旧逻辑，按推荐项选择
             if system_options and used_pyaudio:
-                # 尝试找到包含 "[PA:{default_idx}]" 的项
                 selected_index = 0
-                try:
-                    default_idx = default_loop.get('index') if default_loop else None
-                    if default_idx is not None:
-                        for i, option in enumerate(system_options):
-                            if f"[PA:{default_idx}]" in option:
-                                selected_index = i
-                                break
-                except Exception:
-                    pass
+                if default_idx is not None:
+                    for i, option in enumerate(system_options):
+                        if f"[PA:{default_idx}]" in option:
+                            selected_index = i
+                            break
                 self.system_combo.current(selected_index)
             elif system_options and recommendations['system_audio'] is not None:
                 for i, option in enumerate(system_options):
                     if f"[{recommendations['system_audio']}]" in option:
                         self.system_combo.current(i)
                         break
+            elif system_options:
+                # 至少选中第一项（例如我们加入的占位项）
+                self.system_combo.current(0)
             
             self.log_message(f"设备加载完成 - 麦克风:{len(mic_options)}个, 系统音频:{len(system_options)}个")
             
