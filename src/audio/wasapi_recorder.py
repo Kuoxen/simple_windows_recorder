@@ -1,11 +1,14 @@
 import ctypes
-from ctypes import wintypes, POINTER, Structure, c_void_p, c_uint32, c_float, c_wchar_p, byref, c_int, c_short, c_ulong
+from ctypes import wintypes, POINTER, Structure, c_void_p, c_uint32, c_float, c_wchar_p, byref, c_int, c_short, c_ulong, c_long
 import numpy as np
 import threading
 import time
 import logging
 import platform
 from typing import Optional, List, Callable, Dict
+
+# 定义HRESULT类型
+HRESULT = c_long
 
 # Windows COM 接口定义
 class GUID(Structure):
@@ -96,7 +99,7 @@ class WASAPIRecorder:
             device = ctypes.c_void_p()
             # IMMDeviceEnumerator::GetDefaultAudioEndpoint 在vtable中的位置是3
             get_default_endpoint = ctypes.WINFUNCTYPE(
-                wintypes.HRESULT,
+                HRESULT,
                 ctypes.c_void_p,  # this
                 ctypes.c_int,     # dataFlow
                 ctypes.c_int,     # role
@@ -120,7 +123,7 @@ class WASAPIRecorder:
             audio_client = ctypes.c_void_p()
             # IMMDevice::Activate 在vtable中的位置是3
             activate_func_type = ctypes.WINFUNCTYPE(
-                wintypes.HRESULT,
+                HRESULT,
                 ctypes.c_void_p,  # this
                 ctypes.POINTER(GUID),  # iid
                 wintypes.DWORD,   # dwClsCtx
@@ -144,7 +147,7 @@ class WASAPIRecorder:
             wave_format_ptr = ctypes.c_void_p()
             # IAudioClient::GetMixFormat 在vtable中的位置是8
             get_mix_format_type = ctypes.WINFUNCTYPE(
-                wintypes.HRESULT,
+                HRESULT,
                 ctypes.c_void_p,  # this
                 ctypes.POINTER(ctypes.c_void_p)  # ppDeviceFormat
             )
@@ -162,7 +165,7 @@ class WASAPIRecorder:
             # 初始化音频客户端（Loopback模式）- 使用vtable调用
             # IAudioClient::Initialize 在vtable中的位置是3
             initialize_type = ctypes.WINFUNCTYPE(
-                wintypes.HRESULT,
+                HRESULT,
                 ctypes.c_void_p,  # this
                 ctypes.c_int,     # ShareMode
                 wintypes.DWORD,   # StreamFlags
@@ -191,7 +194,7 @@ class WASAPIRecorder:
             capture_client = ctypes.c_void_p()
             # IAudioClient::GetService 在vtable中的位置是14
             get_service_type = ctypes.WINFUNCTYPE(
-                wintypes.HRESULT,
+                HRESULT,
                 ctypes.c_void_p,  # this
                 ctypes.POINTER(GUID),  # riid
                 ctypes.POINTER(ctypes.c_void_p)  # ppv
@@ -257,7 +260,7 @@ class WASAPIRecorder:
         # 启动音频客户端 - 使用vtable调用
         try:
             # IAudioClient::Start 在vtable中的位置是5
-            start_type = ctypes.WINFUNCTYPE(wintypes.HRESULT, ctypes.c_void_p)
+            start_type = ctypes.WINFUNCTYPE(HRESULT, ctypes.c_void_p)
             client_vtable = ctypes.cast(self._audio_client, ctypes.POINTER(ctypes.c_void_p)).contents
             client_vtable_array = ctypes.cast(client_vtable, ctypes.POINTER(ctypes.c_void_p * 20)).contents
             start_func = ctypes.cast(client_vtable_array[5], start_type)
@@ -288,7 +291,7 @@ class WASAPIRecorder:
         if self._audio_client:
             try:
                 # IAudioClient::Stop 在vtable中的位置是6
-                stop_type = ctypes.WINFUNCTYPE(wintypes.HRESULT, ctypes.c_void_p)
+                stop_type = ctypes.WINFUNCTYPE(HRESULT, ctypes.c_void_p)
                 client_vtable = ctypes.cast(self._audio_client, ctypes.POINTER(ctypes.c_void_p)).contents
                 client_vtable_array = ctypes.cast(client_vtable, ctypes.POINTER(ctypes.c_void_p * 20)).contents
                 stop_func = ctypes.cast(client_vtable_array[6], stop_type)
@@ -321,7 +324,7 @@ class WASAPIRecorder:
                 packet_length = ctypes.c_uint32()
                 # IAudioCaptureClient::GetNextPacketSize 在vtable中的位置是4
                 get_packet_size_type = ctypes.WINFUNCTYPE(
-                    wintypes.HRESULT,
+                    HRESULT,
                     ctypes.c_void_p,
                     ctypes.POINTER(ctypes.c_uint32)
                 )
@@ -347,7 +350,7 @@ class WASAPIRecorder:
                 
                 # IAudioCaptureClient::GetBuffer 在vtable中的位置是3
                 get_buffer_type = ctypes.WINFUNCTYPE(
-                    wintypes.HRESULT,
+                    HRESULT,
                     ctypes.c_void_p,
                     ctypes.POINTER(ctypes.POINTER(ctypes.c_byte)),
                     ctypes.POINTER(ctypes.c_uint32),
@@ -403,7 +406,7 @@ class WASAPIRecorder:
                 # 释放缓冲区 - 使用vtable调用
                 # IAudioCaptureClient::ReleaseBuffer 在vtable中的位置是5
                 release_buffer_type = ctypes.WINFUNCTYPE(
-                    wintypes.HRESULT,
+                    HRESULT,
                     ctypes.c_void_p,
                     ctypes.c_uint32
                 )
