@@ -292,6 +292,7 @@ class UnifiedRecorderUI:
                 if platform.system() == 'Windows':
                     try:
                         import pyaudiowpatch as pyaudio
+                        self.log_message("尝试使用 PyAudioWPatch 枚举 WASAPI loopback 设备...")
                         p = pyaudio.PyAudio()
                         default_loop = None
                         try:
@@ -306,14 +307,21 @@ class UnifiedRecorderUI:
                                 name = info.get('name', f'Device {i}')
                                 system_options.append(f"✅ [PA:{i}] {name}")
                         used_pyaudio = len(system_options) > 0
+                        self.log_message(f"PyAudio 枚举 loopback 数量: {len(system_options)}")
+                        try:
+                            p.terminate()
+                        except Exception:
+                            pass
                     except Exception:
                         used_pyaudio = False
+                        self.log_message("PyAudioWPatch 导入或枚举失败，回退到旧设备列表")
             except Exception:
                 used_pyaudio = False
 
             if not used_pyaudio:
                 # 回退到原有基于 sounddevice 的设备列表（立体声混音/虚拟设备）
                 loopback_devices = self.device_manager.get_loopback_devices()
+                self.log_message(f"sounddevice 回退设备数: {len(loopback_devices)}")
                 for device_id, device in loopback_devices:
                     available = self.device_manager.test_device_availability(device_id)
                     status = "✅" if available else "❌"
