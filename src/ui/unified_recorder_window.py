@@ -290,6 +290,17 @@ class UnifiedRecorderUI:
                 available = self.device_manager.test_device_availability(device_id)
                 status = "✅" if available else "❌"
                 system_options.append(f"{status} [{device_id}] {device['name']}")
+
+            # 在 Windows 上增加基于 PyAudio 的默认 WASAPI Loopback 选项（无需立体声混音/虚拟声卡）
+            try:
+                import platform
+                if platform.system() == 'Windows':
+                    # 使用特殊ID -1 表示“默认输出的环回 (PyAudio)”
+                    pyaudio_option = "✅ [-1] WASAPI Loopback (默认输出) [PyAudio]"
+                    # 放在列表最前，优先展示
+                    system_options = [pyaudio_option] + system_options
+            except Exception:
+                pass
             
             # 更新共享的设备列表
             self.mic_combo['values'] = mic_options
@@ -302,7 +313,11 @@ class UnifiedRecorderUI:
                         self.mic_combo.current(i)
                         break
             
-            if recommendations['system_audio'] is not None:
+            # 优先选择 PyAudio 的 WASAPI Loopback 选项；否则选择推荐项
+            if system_options:
+                # 优先选择我们插入的第一个 PyAudio 选项
+                self.system_combo.current(0)
+            elif recommendations['system_audio'] is not None:
                 for i, option in enumerate(system_options):
                     if f"[{recommendations['system_audio']}]" in option:
                         self.system_combo.current(i)

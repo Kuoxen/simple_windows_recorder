@@ -207,8 +207,8 @@ class EnhancedWASAPIRecorder:
             
             self._stream.start()
             
-            # 启动麦克风流
-            if self.mic_device is not None:
+            # 启动麦克风流（当选择了具体麦克风设备时）
+            if self.mic_device is not None and self.mic_device >= 0:
                 self._start_mic_stream()
             
             return True
@@ -247,8 +247,8 @@ class EnhancedWASAPIRecorder:
             
             self._stream.start()
             
-            # 启动麦克风流
-            if self.mic_device is not None:
+            # 启动麦克风流（当选择了具体麦克风设备时）
+            if self.mic_device is not None and self.mic_device >= 0:
                 self._start_mic_stream()
             
             return True
