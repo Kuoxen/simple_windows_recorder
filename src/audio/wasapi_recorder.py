@@ -83,7 +83,7 @@ class WASAPIRecorder:
             device_enumerator = ctypes.c_void_p()
             hr = ctypes.windll.ole32.CoCreateInstance(
                 byref(CLSID_MMDeviceEnumerator),
-                None,
+                ctypes.c_void_p(),  # pUnkOuter = NULL
                 CLSCTX_ALL,
                 byref(IID_IMMDeviceEnumerator),
                 byref(device_enumerator)
