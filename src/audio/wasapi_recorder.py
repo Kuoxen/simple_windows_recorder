@@ -1,5 +1,5 @@
 import ctypes
-from ctypes import wintypes, POINTER, Structure, c_void_p, c_uint32, c_float, c_wchar_p, byref, c_int, c_short
+from ctypes import wintypes, POINTER, Structure, c_void_p, c_uint32, c_float, c_wchar_p, byref, c_int, c_short, c_ulong
 import numpy as np
 import threading
 import time
@@ -16,16 +16,31 @@ class GUID(Structure):
         ("Data4", wintypes.BYTE * 8)
     ]
 
+class WAVEFORMATEX(Structure):
+    _fields_ = [
+        ("wFormatTag", wintypes.WORD),
+        ("nChannels", wintypes.WORD),
+        ("nSamplesPerSec", wintypes.DWORD),
+        ("nAvgBytesPerSec", wintypes.DWORD),
+        ("nBlockAlign", wintypes.WORD),
+        ("wBitsPerSample", wintypes.WORD),
+        ("cbSize", wintypes.WORD)
+    ]
+
 # WASAPI GUID常量
 IID_IMMDeviceEnumerator = GUID(0xa95664d2, 0x9614, 0x4f35, (0xa7, 0x46, 0xde, 0x8d, 0xb6, 0x36, 0x17, 0xe6))
 CLSID_MMDeviceEnumerator = GUID(0xbcde0395, 0xe52f, 0x467c, (0x8e, 0x3d, 0xc4, 0x57, 0x92, 0x91, 0x69, 0x2e))
-IID_IAudioSessionManager2 = GUID(0x77aa99a0, 0x1bd6, 0x484f, (0x8b, 0xc7, 0x2c, 0x65, 0x4c, 0x9a, 0x9b, 0x6f))
-IID_IAudioSessionEnumerator = GUID(0xe2f5bb11, 0x0570, 0x40ca, (0xac, 0xdd, 0x3a, 0xa0, 0x12, 0x77, 0xde, 0xe8))
-IID_IAudioSessionControl2 = GUID(0xbfb7ff88, 0x7239, 0x4fc9, (0x8f, 0xa2, 0x07, 0xc9, 0x50, 0xbe, 0x9c, 0x6d))
-IID_ISimpleAudioVolume = GUID(0x87ce5498, 0x68d6, 0x44e5, (0x92, 0x15, 0x6d, 0xa4, 0x7e, 0xf8, 0x83, 0xd8))
+IID_IAudioClient = GUID(0x1cb9ad4c, 0xdbfa, 0x4c32, (0xb1, 0x78, 0xc2, 0xf5, 0x68, 0xa7, 0x03, 0xb2))
+IID_IAudioCaptureClient = GUID(0xc8adbd64, 0xe71e, 0x48a0, (0xa4, 0xde, 0x18, 0x5c, 0x39, 0x5c, 0xd3, 0x17))
+
+# 常量
+AUDCLNT_SHAREMODE_SHARED = 0
+AUDCLNT_STREAMFLAGS_LOOPBACK = 0x00020000
+WAVE_FORMAT_PCM = 1
+CLSCTX_ALL = 23
 
 class WASAPIRecorder:
-    """WASAPI音频录制器 - 直接捕获浏览器进程音频"""
+    """WASAPI Loopback录制器 - 直接录制系统音频输出"""
     
     BROWSER_PROCESSES = {'chrome.exe', 'firefox.exe', 'msedge.exe', 'opera.exe', 'brave.exe'}
     
@@ -36,11 +51,13 @@ class WASAPIRecorder:
         self._record_thread = None
         self._audio_callback: Optional[Callable[[np.ndarray], None]] = None
         
-        # 浏览器音频会话
-        self._browser_sessions = []
+        # COM对象
         self._com_initialized = False
+        self._device_enumerator = None
+        self._device = None
+        self._audio_client = None
+        self._capture_client = None
         
-        # 只在Windows上初始化
         if platform.system() == "Windows":
             self._init_com()
     
@@ -53,8 +70,108 @@ class WASAPIRecorder:
         except Exception as e:
             self.logger.error(f"COM初始化失败: {e}")
     
+    def _init_wasapi_loopback(self) -> bool:
+        """初始化WASAPI Loopback模式"""
+        try:
+            if platform.system() != "Windows":
+                return False
+            
+            # 创建设备枚举器
+            device_enumerator = ctypes.c_void_p()
+            hr = ctypes.windll.ole32.CoCreateInstance(
+                byref(CLSID_MMDeviceEnumerator),
+                None,
+                CLSCTX_ALL,
+                byref(IID_IMMDeviceEnumerator),
+                byref(device_enumerator)
+            )
+            
+            if hr != 0:
+                self.logger.error(f"创建设备枚举器失败: {hr}")
+                return False
+            
+            self._device_enumerator = device_enumerator
+            
+            # 获取默认音频渲染设备
+            device = ctypes.c_void_p()
+            hr = ctypes.windll.ole32.IMMDeviceEnumerator_GetDefaultAudioEndpoint(
+                device_enumerator,
+                0,  # eRender
+                0,  # eConsole
+                byref(device)
+            )
+            
+            if hr != 0:
+                self.logger.error(f"获取默认渲染设备失败: {hr}")
+                return False
+            
+            self._device = device
+            
+            # 激活音频客户端
+            audio_client = ctypes.c_void_p()
+            hr = ctypes.windll.ole32.IMMDevice_Activate(
+                device,
+                byref(IID_IAudioClient),
+                CLSCTX_ALL,
+                None,
+                byref(audio_client)
+            )
+            
+            if hr != 0:
+                self.logger.error(f"激活音频客户端失败: {hr}")
+                return False
+            
+            self._audio_client = audio_client
+            
+            # 获取混合格式
+            wave_format_ptr = ctypes.c_void_p()
+            hr = ctypes.windll.ole32.IAudioClient_GetMixFormat(
+                audio_client,
+                byref(wave_format_ptr)
+            )
+            
+            if hr != 0:
+                self.logger.error(f"获取混合格式失败: {hr}")
+                return False
+            
+            # 初始化音频客户端（Loopback模式）
+            hr = ctypes.windll.ole32.IAudioClient_Initialize(
+                audio_client,
+                AUDCLNT_SHAREMODE_SHARED,
+                AUDCLNT_STREAMFLAGS_LOOPBACK,
+                10000000,  # 1秒缓冲
+                0,
+                wave_format_ptr,
+                None
+            )
+            
+            if hr != 0:
+                self.logger.error(f"初始化音频客户端失败: {hr}")
+                return False
+            
+            # 获取捕获客户端
+            capture_client = ctypes.c_void_p()
+            hr = ctypes.windll.ole32.IAudioClient_GetService(
+                audio_client,
+                byref(IID_IAudioCaptureClient),
+                byref(capture_client)
+            )
+            
+            if hr != 0:
+                self.logger.error(f"获取捕获客户端失败: {hr}")
+                return False
+            
+            self._capture_client = capture_client
+            
+            self.logger.info("WASAPI Loopback初始化成功")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"WASAPI Loopback初始化失败: {e}")
+            return False
+    
     def get_browser_sessions(self) -> List[Dict]:
-        """获取浏览器音频会话"""
+        """获取浏览器进程"""
         sessions = []
         try:
             if platform.system() != "Windows":
@@ -76,20 +193,6 @@ class WASAPIRecorder:
         
         return sessions
     
-    def _get_browser_audio_sessions(self):
-        """获取浏览器的音频会话（WASAPI实现）"""
-        try:
-            # 这里应该使用WASAPI COM接口获取音频会话
-            # 由于COM接口调用复杂，使用简化的实现
-            browser_pids = set()
-            for session in self.get_browser_sessions():
-                browser_pids.add(session['pid'])
-            
-            return browser_pids
-        except Exception as e:
-            self.logger.error(f"获取浏览器音频会话失败: {e}")
-            return set()
-    
     def set_audio_callback(self, callback: Callable[[np.ndarray], None]):
         """设置音频数据回调"""
         self._audio_callback = callback
@@ -103,11 +206,26 @@ class WASAPIRecorder:
             self.logger.warning(f"非Windows系统({platform.system()})，WASAPI录制不可用")
             return False
         
+        # 初始化WASAPI Loopback
+        if not self._init_wasapi_loopback():
+            self.logger.error("WASAPI Loopback初始化失败")
+            return False
+        
+        # 启动音频客户端
+        try:
+            hr = ctypes.windll.ole32.IAudioClient_Start(self._audio_client)
+            if hr != 0:
+                self.logger.error(f"启动音频客户端失败: {hr}")
+                return False
+        except Exception as e:
+            self.logger.error(f"启动音频客户端异常: {e}")
+            return False
+        
         self._recording = True
-        self._record_thread = threading.Thread(target=self._record_loop, name="WASAPIRecorder")
+        self._record_thread = threading.Thread(target=self._record_loop, name="WASAPILoopback")
         self._record_thread.start()
         
-        self.logger.info("WASAPI录制开始")
+        self.logger.info("WASAPI Loopback录制开始")
         return True
     
     def stop_recording(self):
@@ -116,153 +234,107 @@ class WASAPIRecorder:
             return
         
         self._recording = False
+        
+        # 停止音频客户端
+        if self._audio_client:
+            try:
+                ctypes.windll.ole32.IAudioClient_Stop(self._audio_client)
+            except:
+                pass
+        
         if self._record_thread and self._record_thread.is_alive():
             self._record_thread.join(timeout=5.0)
         
-        self.logger.info("WASAPI录制停止")
+        # 清理COM对象
+        self._capture_client = None
+        self._audio_client = None
+        self._device = None
+        self._device_enumerator = None
+        
+        self.logger.info("WASAPI Loopback录制停止")
     
     def _record_loop(self):
-        """录制循环 - 使用pycaw库实现真正的WASAPI捕获"""
-        try:
-            # 尝试使用pycaw库
-            from pycaw.pycaw import AudioUtilities, AudioSession
-            
-            # 获取所有音频会话
-            sessions = AudioUtilities.GetAllSessions()
-            browser_sessions = []
-            
-            # 筛选浏览器会话
-            for session in sessions:
-                if session.Process and session.Process.name().lower() in self.BROWSER_PROCESSES:
-                    browser_sessions.append(session)
-                    self.logger.info(f"找到浏览器音频会话: {session.Process.name()}")
-            
-            if not browser_sessions:
-                self.logger.warning("未找到浏览器音频会话")
-                # Fallback: 使用系统音频
-                self._fallback_system_audio()
-                return
-            
-            # 监控浏览器音频会话
-            chunk_size = 1024
-            while self._recording:
-                try:
-                    # 获取浏览器音频数据
-                    audio_data = self._capture_browser_audio(browser_sessions, chunk_size)
-                    
-                    if self._audio_callback and audio_data is not None:
-                        self._audio_callback(audio_data)
-                    
-                    time.sleep(chunk_size / self.sample_rate)
-                    
-                except Exception as e:
-                    self.logger.error(f"音频捕获错误: {e}")
-                    time.sleep(0.1)
-                    
-        except ImportError:
-            self.logger.warning("pycaw库未安装，使用fallback实现")
-            self._fallback_system_audio()
-        except Exception as e:
-            self.logger.error(f"WASAPI录制错误: {e}")
-            self._fallback_system_audio()
-    
-    def _capture_browser_audio(self, sessions, chunk_size) -> Optional[np.ndarray]:
-        """捕获浏览器音频数据"""
-        try:
-            # 这里应该实现真正的音频数据捕获
-            # 由于pycaw主要用于音量控制，音频数据捕获需要更底层的WASAPI调用
-            
-            # 检查会话是否活跃
-            active_sessions = []
-            for session in sessions:
-                try:
-                    if session.SimpleAudioVolume.GetMasterVolume() > 0:
-                        active_sessions.append(session)
-                except:
-                    pass
-            
-            if active_sessions:
-                # 生成基于音量的模拟音频（临时实现）
-                volume = sum(s.SimpleAudioVolume.GetMasterVolume() for s in active_sessions) / len(active_sessions)
-                # 生成带有音量信息的音频信号
-                t = np.linspace(0, chunk_size / self.sample_rate, chunk_size)
-                audio_data = (np.sin(2 * np.pi * 440 * t) * volume * 0.1).astype(np.float32)
-                return audio_data
-            else:
-                return np.zeros(chunk_size, dtype=np.float32)
-                
-        except Exception as e:
-            self.logger.error(f"捕获浏览器音频失败: {e}")
-            return None
-    
-    def _fallback_system_audio(self):
-        """Fallback: 使用系统音频录制"""
-        try:
-            import sounddevice as sd
-            
-            def audio_callback(indata, frames, time, status):
-                if status:
-                    self.logger.warning(f"系统音频状态: {status}")
-                
-                if self._recording and len(indata) > 0:
-                    if indata.shape[1] > 1:
-                        audio_data = np.mean(indata, axis=1).astype(np.float32)
-                    else:
-                        audio_data = indata[:, 0].astype(np.float32)
-                    
-                    if self._audio_callback:
-                        self._audio_callback(audio_data)
-            
-            # 查找loopback设备
-            devices = sd.query_devices()
-            loopback_device = None
-            
-            for i, device in enumerate(devices):
-                name = device['name'].lower()
-                if any(keyword in name for keyword in ['loopback', 'stereo mix', 'what u hear']):
-                    if device['max_input_channels'] > 0:
-                        loopback_device = i
-                        break
-            
-            if loopback_device is None:
-                self.logger.warning("未找到loopback设备，使用静音数据")
-                self._generate_silence()
-                return
-            
-            # 启动系统音频流
-            stream = sd.InputStream(
-                device=loopback_device,
-                channels=2,
-                samplerate=self.sample_rate,
-                callback=audio_callback,
-                blocksize=1024,
-                dtype=np.float32
-            )
-            
-            stream.start()
-            self.logger.info(f"使用系统音频设备: {devices[loopback_device]['name']}")
-            
-            while self._recording:
-                time.sleep(0.1)
-            
-            stream.stop()
-            stream.close()
-            
-        except Exception as e:
-            self.logger.error(f"系统音频录制失败: {e}")
-            self._generate_silence()
-    
-    def _generate_silence(self):
-        """生成静音数据"""
-        chunk_size = 1024
+        """录制循环 - WASAPI Loopback音频捕获"""
+        if not self._capture_client:
+            self.logger.error("捕获客户端未初始化")
+            return
+        
+        self.logger.info("开始WASAPI Loopback音频捕获")
+        
         while self._recording:
             try:
-                audio_data = np.zeros(chunk_size, dtype=np.float32)
-                if self._audio_callback:
-                    self._audio_callback(audio_data)
-                time.sleep(chunk_size / self.sample_rate)
-            except:
-                break
+                # 获取可用的音频包数量
+                packet_length = ctypes.c_uint32()
+                hr = ctypes.windll.ole32.IAudioCaptureClient_GetNextPacketSize(
+                    self._capture_client,
+                    byref(packet_length)
+                )
+                
+                if hr != 0:
+                    time.sleep(0.001)
+                    continue
+                
+                if packet_length.value == 0:
+                    time.sleep(0.001)
+                    continue
+                
+                # 获取音频数据
+                data_ptr = ctypes.POINTER(ctypes.c_byte)()
+                num_frames = ctypes.c_uint32()
+                flags = ctypes.c_uint32()
+                
+                hr = ctypes.windll.ole32.IAudioCaptureClient_GetBuffer(
+                    self._capture_client,
+                    byref(data_ptr),
+                    byref(num_frames),
+                    byref(flags),
+                    None,
+                    None
+                )
+                
+                if hr != 0 or num_frames.value == 0:
+                    time.sleep(0.001)
+                    continue
+                
+                # 转换音频数据
+                try:
+                    # 假设是16位立体声
+                    bytes_per_frame = 4  # 2 channels * 2 bytes per sample
+                    buffer_size = num_frames.value * bytes_per_frame
+                    
+                    if buffer_size > 0:
+                        # 读取音频数据
+                        audio_buffer = np.frombuffer(
+                            ctypes.string_at(data_ptr, buffer_size),
+                            dtype=np.int16
+                        )
+                        
+                        # 转换为float32并归一化
+                        if len(audio_buffer) > 0:
+                            # 立体声转单声道
+                            if len(audio_buffer) % 2 == 0:
+                                left = audio_buffer[0::2].astype(np.float32) / 32768.0
+                                right = audio_buffer[1::2].astype(np.float32) / 32768.0
+                                audio_data = (left + right) / 2.0
+                            else:
+                                audio_data = audio_buffer.astype(np.float32) / 32768.0
+                            
+                            # 发送音频数据
+                            if self._audio_callback:
+                                self._audio_callback(audio_data)
+                
+                except Exception as e:
+                    self.logger.error(f"音频数据处理错误: {e}")
+                
+                # 释放缓冲区
+                ctypes.windll.ole32.IAudioCaptureClient_ReleaseBuffer(
+                    self._capture_client,
+                    num_frames
+                )
+                
+            except Exception as e:
+                self.logger.error(f"录制循环错误: {e}")
+                time.sleep(0.01)
     
     def __del__(self):
         """析构函数"""
