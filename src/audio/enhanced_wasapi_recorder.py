@@ -126,6 +126,13 @@ class EnhancedWASAPIRecorder:
         
         self.set_devices(mic_device, system_device)
         
+        # 确保每次新会话都从空缓冲开始，避免带入上一次的残留数据
+        self.recording_mic_data = []
+        self.recording_system_data = []
+        self._mic_first_time = None
+        self._system_first_time = None
+        self._start_time_monotonic = None
+        
         # 尝试不同的音频捕获方式
         capture_success = False
         
