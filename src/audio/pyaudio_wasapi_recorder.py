@@ -11,9 +11,10 @@ class PyaudioWasapiLoopbackRecorder:
     不依赖立体声混音或虚拟声卡，直接录制默认扬声器的系统音频。
     """
 
-    def __init__(self, sample_rate: Optional[int] = None, channels: Optional[int] = None):
+    def __init__(self, sample_rate: Optional[int] = None, channels: Optional[int] = None, preferred_device_index: Optional[int] = None):
         self.sample_rate = sample_rate
         self.channels = channels
+        self.preferred_device_index = preferred_device_index
         self._callback: Optional[Callable[[np.ndarray], None]] = None
         self._pyaudio = None
         self._stream = None
@@ -33,14 +34,24 @@ class PyaudioWasapiLoopbackRecorder:
         try:
             self._pyaudio = pyaudio.PyAudio()
 
-            # 优先获取默认 WASAPI loopback 设备
-            try:
-                self._device_info = self._pyaudio.get_default_wasapi_loopback()
-            except Exception:
-                self._device_info = None
+            # 选择优先设备：优先使用 preferred_device_index，其次默认环回，再次扫描环回列表
+            if self.preferred_device_index is not None:
+                try:
+                    info = self._pyaudio.get_device_info_by_index(int(self.preferred_device_index))
+                    if info.get('isLoopback') and info.get('maxInputChannels', 0) > 0:
+                        self._device_info = info
+                except Exception:
+                    self._device_info = None
 
-            # 回退：扫描 isLoopback 标记
             if not self._device_info:
+                # 默认 WASAPI loopback 设备
+                try:
+                    self._device_info = self._pyaudio.get_default_wasapi_loopback()
+                except Exception:
+                    self._device_info = None
+
+            if not self._device_info:
+                # 回退：扫描 isLoopback 标记
                 for i in range(self._pyaudio.get_device_count()):
                     info = self._pyaudio.get_device_info_by_index(i)
                     if info.get('isLoopback') and info.get('maxInputChannels', 0) > 0:

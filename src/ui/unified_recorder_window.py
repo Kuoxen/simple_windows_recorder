@@ -284,23 +284,40 @@ class UnifiedRecorderUI:
                 mic_options.append(f"{status} [{device_id}] {device['name']}")
             
             # 加载系统音频设备
-            loopback_devices = self.device_manager.get_loopback_devices()
             system_options = []
-            for device_id, device in loopback_devices:
-                available = self.device_manager.test_device_availability(device_id)
-                status = "✅" if available else "❌"
-                system_options.append(f"{status} [{device_id}] {device['name']}")
-
-            # 在 Windows 上增加基于 PyAudio 的默认 WASAPI Loopback 选项（无需立体声混音/虚拟声卡）
+            used_pyaudio = False
             try:
                 import platform
                 if platform.system() == 'Windows':
-                    # 使用特殊ID -1 表示“默认输出的环回 (PyAudio)”
-                    pyaudio_option = "✅ [-1] WASAPI Loopback (默认输出) [PyAudio]"
-                    # 放在列表最前，优先展示
-                    system_options = [pyaudio_option] + system_options
+                    # 优先使用 PyAudioWPatch 枚举所有 WASAPI loopback 设备
+                    try:
+                        import pyaudiowpatch as pyaudio
+                        p = pyaudio.PyAudio()
+                        default_loop = None
+                        try:
+                            default_loop = p.get_default_wasapi_loopback()
+                        except Exception:
+                            default_loop = None
+                        default_idx = default_loop.get('index') if default_loop else None
+                        for i in range(p.get_device_count()):
+                            info = p.get_device_info_by_index(i)
+                            if info.get('isLoopback') and info.get('maxInputChannels', 0) > 0:
+                                tag = '✅'  # 可见即认为可用
+                                name = info.get('name', f'Device {i}')
+                                system_options.append(f"{tag} [PA:{i}] {name}")
+                        used_pyaudio = len(system_options) > 0
+                    except Exception:
+                        used_pyaudio = False
             except Exception:
-                pass
+                used_pyaudio = False
+
+            if not used_pyaudio:
+                # 回退到原有基于 sounddevice 的设备列表（立体声混音/虚拟设备）
+                loopback_devices = self.device_manager.get_loopback_devices()
+                for device_id, device in loopback_devices:
+                    available = self.device_manager.test_device_availability(device_id)
+                    status = "✅" if available else "❌"
+                    system_options.append(f"{status} [{device_id}] {device['name']}")
             
             # 更新共享的设备列表
             self.mic_combo['values'] = mic_options
@@ -313,11 +330,23 @@ class UnifiedRecorderUI:
                         self.mic_combo.current(i)
                         break
             
-            # 优先选择 PyAudio 的 WASAPI Loopback 选项；否则选择推荐项
-            if system_options:
-                # 优先选择我们插入的第一个 PyAudio 选项
-                self.system_combo.current(0)
-            elif recommendations['system_audio'] is not None:
+            # 选择项：
+            # - 如果使用了 PyAudio 列出 loopback，则默认选择“默认输出”的环回（若存在），否则第一项
+            # - 否则（没有 loopback），选择推荐项
+            if system_options and used_pyaudio:
+                # 尝试找到包含 "[PA:{default_idx}]" 的项
+                selected_index = 0
+                try:
+                    default_idx = default_loop.get('index') if default_loop else None
+                    if default_idx is not None:
+                        for i, option in enumerate(system_options):
+                            if f"[PA:{default_idx}]" in option:
+                                selected_index = i
+                                break
+                except Exception:
+                    pass
+                self.system_combo.current(selected_index)
+            elif system_options and recommendations['system_audio'] is not None:
                 for i, option in enumerate(system_options):
                     if f"[{recommendations['system_audio']}]" in option:
                         self.system_combo.current(i)
@@ -370,7 +399,11 @@ class UnifiedRecorderUI:
         if not combo_value or "❌" in combo_value:
             return None
         try:
-            return int(combo_value.split(']')[0].split('[')[1])
+            raw = combo_value.split(']')[0].split('[')[1]
+            if raw.startswith('PA:'):
+                # 以字符串形式返回 PyAudio 设备，供 recorder 识别
+                return f"{raw}"
+            return int(raw)
         except:
             return None
     

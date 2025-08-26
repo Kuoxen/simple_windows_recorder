@@ -1,4 +1,6 @@
 import numpy as np
+import os
+import wave
 import threading
 import time
 import logging
@@ -128,9 +130,18 @@ class EnhancedWASAPIRecorder:
         if platform.system() == "Windows" and not capture_success:
             try:
                 from audio.pyaudio_wasapi_recorder import PyaudioWasapiLoopbackRecorder
+                # 如果系统音频下拉选择了 PyAudio 标记的设备（形如 "[PA:idx]"），则提取 idx 作为优先设备
+                preferred_idx = None
+                try:
+                    # system_device 可能来自 UI：-1 表示默认环回；字符串编码则是 PA 设备
+                    if isinstance(self.system_device, str) and self.system_device.startswith('PA:'):
+                        preferred_idx = int(self.system_device.split(':', 1)[1])
+                except Exception:
+                    preferred_idx = None
                 self._pyaudio_recorder = PyaudioWasapiLoopbackRecorder(
                     sample_rate=self.settings.audio['sample_rate'],
-                    channels=2
+                    channels=2,
+                    preferred_device_index=preferred_idx
                 )
                 def on_system_audio(chunk: np.ndarray):
                     if self._recording and len(chunk) > 0:
@@ -332,14 +343,64 @@ class EnhancedWASAPIRecorder:
         # 计算录制时长
         duration = (datetime.now() - self.recording_start_time).total_seconds() if self.recording_start_time else 0
         
+        # 将数据保存为文件，返回与UI兼容的结果字段
+        mic_file = None
+        speaker_file = None
+        mic_success = False
+        speaker_success = False
+        
+        try:
+            output_dir = self.settings.recording['output_dir']
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            self.logger.error(f"创建输出目录失败: {e}")
+            output_dir = "."
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        sample_rate = int(self.settings.audio['sample_rate'])
+        
+        if self.recording_mic_data:
+            mic_file_tmp = os.path.join(output_dir, f"tmp_mic_{timestamp}.wav")
+            if self._save_audio_file(self.recording_mic_data, mic_file_tmp, sample_rate):
+                mic_file = mic_file_tmp
+                mic_success = True
+                self._notify_status(f"✅ 麦克风文件保存成功: {os.path.basename(mic_file)}")
+        
+        if self.recording_system_data:
+            speaker_file_tmp = os.path.join(output_dir, f"tmp_system_{timestamp}.wav")
+            if self._save_audio_file(self.recording_system_data, speaker_file_tmp, sample_rate):
+                speaker_file = speaker_file_tmp
+                speaker_success = True
+                self._notify_status(f"✅ 系统音频文件保存成功: {os.path.basename(speaker_file)}")
+        
         self._notify_status(f"录制停止 - 时长: {duration:.2f}秒, 模式: {self._capture_method}")
         
         return {
             'duration': duration,
-            'mic_data': self.recording_mic_data.copy(),
-            'system_data': self.recording_system_data.copy(),
+            'mic_file': mic_file,
+            'speaker_file': speaker_file,
+            'mic_success': mic_success,
+            'speaker_success': speaker_success,
             'capture_method': self._capture_method
         }
+
+    def _save_audio_file(self, data: list, filepath: str, sample_rate: int) -> bool:
+        """保存单声道 float32 数据为 WAV 文件"""
+        try:
+            if not data:
+                return False
+            audio = np.asarray(data, dtype=np.float32)
+            audio = np.clip(audio, -1.0, 1.0)
+            audio_i16 = (audio * 32767.0).astype(np.int16)
+            with wave.open(filepath, 'wb') as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(sample_rate)
+                wf.writeframes(audio_i16.tobytes())
+            return True
+        except Exception as e:
+            self.logger.error(f"保存音频文件失败 {filepath}: {e}")
+            return False
     
     def get_recording_status(self) -> Dict[str, Any]:
         """获取录制状态"""
