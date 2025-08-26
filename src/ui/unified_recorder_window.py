@@ -10,6 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.settings import Settings
 from audio.enhanced_device_manager import EnhancedDeviceManager
 from audio.enhanced_recorder import EnhancedAudioRecorder
+from audio.enhanced_wasapi_recorder import EnhancedWASAPIRecorder
 from audio.auto_recorder import AutoAudioRecorder
 from audio.post_processor import AudioPostProcessor
 from storage.uploader import FileUploader
@@ -38,7 +39,7 @@ class UnifiedRecorderUI:
             config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "config.yaml")
             self.settings = Settings(config_path)
             self.device_manager = EnhancedDeviceManager()
-            self.manual_recorder = EnhancedAudioRecorder(self.settings)
+            self.manual_recorder = EnhancedWASAPIRecorder(self.settings)
             self.auto_recorder = AutoAudioRecorder(self.settings)
             self.post_processor = AudioPostProcessor(self.settings)
             self.post_processor.start()
