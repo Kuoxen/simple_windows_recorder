@@ -388,6 +388,7 @@ class EnhancedWASAPIRecorder:
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         sample_rate = int(self.settings.audio['sample_rate'])
+        self.logger.info(f"保存录制: duration={duration:.3f}s, target_rate={sample_rate}, mic_len={len(self.recording_mic_data)}, sys_len={len(self.recording_system_data)}")
         
         # 以麦克风长度作为对齐基准；若无麦克风数据，再退回按时长估算
         mic_frame_len = len(self.recording_mic_data) if self.recording_mic_data else 0
@@ -401,6 +402,7 @@ class EnhancedWASAPIRecorder:
         if self.recording_mic_data:
             # mic 作为基准：不补前置静音，不强行裁剪
             mic_aligned = np.asarray(self.recording_mic_data, dtype=np.float32)
+            self.logger.info(f"MIC 保存前: frames={len(mic_aligned)}, secs={len(mic_aligned)/sample_rate:.3f}")
             mic_file_tmp = os.path.join(output_dir, f"tmp_mic_{timestamp}.wav")
             if self._save_audio_file(mic_aligned, mic_file_tmp, sample_rate):
                 mic_file = mic_file_tmp
@@ -413,8 +415,11 @@ class EnhancedWASAPIRecorder:
             sys_rate = sample_rate
             if self._capture_method == 'pyaudio' and self._pyaudio_recorder and self._pyaudio_recorder.get_actual_rate():
                 sys_rate = int(self._pyaudio_recorder.get_actual_rate())
+            self.logger.info(f"SYS 初始: frames={len(sys_arr)}, secs={len(sys_arr)/(sys_rate if sys_rate else 1):.3f}, rate={sys_rate}")
             if sys_rate != sample_rate and sys_arr.size > 0:
+                before = len(sys_arr)
                 sys_arr = self._resample_linear(sys_arr, sys_rate, sample_rate)
+                self.logger.info(f"SYS 重采样: {sys_rate} -> {sample_rate}, frames {before} -> {len(sys_arr)}")
 
             # 计算实际起始偏移：以“mic 首帧”与“system 首帧”的到达时间差为准
             prepend_frames = 0
@@ -422,23 +427,33 @@ class EnhancedWASAPIRecorder:
                 if self._mic_first_time is not None and self._system_first_time is not None:
                     offset_sec = max(0.0, self._system_first_time - self._mic_first_time)
                     prepend_frames = int(round(offset_sec * sample_rate))
+                    self.logger.info(f"SYS 偏移(相对MIC): offset_sec={offset_sec:.6f}, prepend_frames={prepend_frames}")
                 elif self._start_time_monotonic is not None and self._system_first_time is not None:
                     offset_sec = max(0.0, self._system_first_time - self._start_time_monotonic)
                     prepend_frames = int(round(offset_sec * sample_rate))
-            except Exception:
+                    self.logger.info(f"SYS 偏移(相对START): offset_sec={offset_sec:.6f}, prepend_frames={prepend_frames}")
+            except Exception as e:
+                self.logger.info(f"SYS 偏移计算失败: {e}")
                 prepend_frames = 0
 
             if prepend_frames > 0:
+                before = len(sys_arr)
                 sys_arr = np.concatenate([np.zeros(prepend_frames, dtype=np.float32), sys_arr])
+                self.logger.info(f"SYS 前置补零: +{prepend_frames} -> frames {before} -> {len(sys_arr)}")
 
             # 最终按 mic 长度对齐：不足补零到 expected_frames，超过则截断
             if len(sys_arr) < expected_frames:
                 pad = expected_frames - len(sys_arr)
+                before = len(sys_arr)
                 system_aligned = np.concatenate([np.zeros(pad, dtype=np.float32), sys_arr])
+                self.logger.info(f"SYS 末尾补零: +{pad} -> frames {before} -> {len(system_aligned)}")
             elif len(sys_arr) > expected_frames:
+                before = len(sys_arr)
                 system_aligned = sys_arr[:expected_frames]
+                self.logger.info(f"SYS 截断: frames {before} -> {len(system_aligned)}")
             else:
                 system_aligned = sys_arr
+                self.logger.info(f"SYS 对齐完成: frames={len(system_aligned)}")
             speaker_file_tmp = os.path.join(output_dir, f"tmp_system_{timestamp}.wav")
             if self._save_audio_file(system_aligned, speaker_file_tmp, sample_rate):
                 speaker_file = speaker_file_tmp
