@@ -413,9 +413,9 @@ class EnhancedWASAPIRecorder:
     def _save_audio_file(self, data: list, filepath: str, sample_rate: int) -> bool:
         """保存单声道 float32 数据为 WAV 文件"""
         try:
-            if not data:
-                return False
             audio = np.asarray(data, dtype=np.float32)
+            if audio.size == 0:
+                return False
             audio = np.clip(audio, -1.0, 1.0)
             audio_i16 = (audio * 32767.0).astype(np.int16)
             with wave.open(filepath, 'wb') as wf:
