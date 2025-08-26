@@ -300,12 +300,26 @@ class UnifiedRecorderUI:
                         except Exception:
                             default_loop = None
                         default_idx = default_loop.get('index') if default_loop else None
-                        # 枚举所有 loopback 设备
+
+                        # 先加入默认环回（若可用），避免扫描失败导致列表为空
+                        if default_loop and default_loop.get('maxInputChannels', 0) > 0:
+                            name = default_loop.get('name', 'Default WASAPI Loopback')
+                            system_options.append(f"✅ [PA:{default_idx}] {name}")
+
+                        # 枚举所有 loopback 设备（兼容不同键名：isLoopbackDevice / isLoopback）
                         for i in range(p.get_device_count()):
                             info = p.get_device_info_by_index(i)
-                            if info.get('isLoopback') and info.get('maxInputChannels', 0) > 0:
+                            is_lb = info.get('isLoopbackDevice')
+                            if is_lb is None:
+                                is_lb = info.get('isLoopback')
+                            if is_lb and info.get('maxInputChannels', 0) > 0:
                                 name = info.get('name', f'Device {i}')
-                                system_options.append(f"✅ [PA:{i}] {name}")
+                                entry = f"✅ [PA:{i}] {name}"
+                                if f"[PA:{i}]" not in entry:
+                                    pass
+                                # 去重：避免与默认环回重复
+                                if not any(f"[PA:{i}]" in opt for opt in system_options):
+                                    system_options.append(entry)
                         used_pyaudio = len(system_options) > 0
                         self.log_message(f"PyAudio 枚举 loopback 数量: {len(system_options)}")
                         try:
