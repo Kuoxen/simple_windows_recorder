@@ -399,7 +399,7 @@ class BrowserRecorderWindow:
                 self.customer_id.get()
             )
             
-            if self.manual_recorder.start_monitoring():
+            if self.manual_recorder.start_manual_recording():
                 self.is_recording = True
                 self.root.after(0, self.update_manual_ui, True)
                 self.root.after(0, self.start_duration_timer)
@@ -411,7 +411,7 @@ class BrowserRecorderWindow:
     def stop_manual_recording(self):
         """停止手动录制"""
         def stop_thread():
-            self.manual_recorder.stop_monitoring()
+            self.manual_recorder.stop_manual_recording()
             self.is_recording = False
             self.root.after(0, self.update_manual_ui, False)
         
@@ -514,7 +514,7 @@ class BrowserRecorderWindow:
         """开始时长计时器"""
         if self.is_recording:
             status = self.manual_recorder.get_status()
-            if status.get('monitoring', False):
+            if status.get('monitoring', False) and status.get('state') == 'recording':
                 duration = int(status.get('recording_duration', 0))
                 minutes = duration // 60
                 seconds = duration % 60

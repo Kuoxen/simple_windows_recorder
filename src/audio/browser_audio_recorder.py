@@ -84,7 +84,7 @@ class BrowserAudioRecorder:
         }
     
     def start_monitoring(self) -> bool:
-        """开始监听模式"""
+        """开始监听模式（自动录制）"""
         if self.is_monitoring:
             self._notify_status("监听已在进行中")
             return False
@@ -116,6 +116,40 @@ class BrowserAudioRecorder:
             self.state = BrowserRecordingState.IDLE
             return False
     
+    def start_manual_recording(self) -> bool:
+        """开始手动录制（立即开始录制）"""
+        if self.is_monitoring:
+            self._notify_status("录制已在进行中")
+            return False
+        
+        self.is_monitoring = True
+        self.state = BrowserRecordingState.RECORDING
+        self.recording_start_time = datetime.now()
+        
+        try:
+            # 启动WASAPI录制器
+            if not self.wasapi_recorder.start_recording():
+                raise Exception("WASAPI录制器启动失败")
+            
+            # 启动麦克风流
+            self._start_mic_stream()
+            
+            # 清空录制数据
+            self.recording_mic_data = []
+            self.recording_browser_data = []
+            
+            # 标记通话开始
+            self.activity_detector.start_call()
+            
+            self._notify_status("🔴 手动开始录制通话")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"启动录制失败: {e}")
+            self.is_monitoring = False
+            self.state = BrowserRecordingState.IDLE
+            return False
+    
     def stop_monitoring(self):
         """停止监听模式"""
         if not self.is_monitoring:
@@ -140,6 +174,32 @@ class BrowserAudioRecorder:
         
         self.state = BrowserRecordingState.IDLE
         self._notify_status("监听已停止")
+    
+    def stop_manual_recording(self):
+        """停止手动录制"""
+        if not self.is_monitoring or self.state != BrowserRecordingState.RECORDING:
+            return
+        
+        self._notify_status("正在停止录制...")
+        
+        # 获取通话时长
+        call_duration = self.activity_detector.end_call()
+        
+        # 保存录制文件
+        result = self._save_recording()
+        
+        if result and (result.get('mic_success') or result.get('browser_success')):
+            self._notify_status(f"✅ 手动录制完成，时长: {call_duration:.1f}秒")
+        else:
+            self._notify_status("❌ 录制保存失败")
+        
+        # 停止所有流
+        self.is_monitoring = False
+        self.wasapi_recorder.stop_recording()
+        self._stop_mic_stream()
+        self.state = BrowserRecordingState.IDLE
+        
+        self._notify_status("录制已停止")
     
     def _start_mic_stream(self):
         """启动麦克风流"""
