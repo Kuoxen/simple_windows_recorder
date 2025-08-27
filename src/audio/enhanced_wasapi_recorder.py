@@ -218,11 +218,16 @@ class EnhancedWASAPIRecorder:
         try:
             import sounddevice as sd
             
-            def audio_callback(indata, frames, time, status):
+            def audio_callback(indata, frames, sd_time, status):
                 if status:
                     self.logger.warning(f"WASAPI音频状态: {status}")
                 
                 if self._recording and len(indata) > 0:
+                    if self._system_first_time is None:
+                        try:
+                            self._system_first_time = time.perf_counter()
+                        except Exception:
+                            self._system_first_time = None
                     # 处理系统音频
                     if indata.shape[1] > 1:
                         system_audio = np.mean(indata, axis=1).astype(np.float32)
@@ -258,11 +263,16 @@ class EnhancedWASAPIRecorder:
         try:
             import sounddevice as sd
             
-            def audio_callback(indata, frames, time, status):
+            def audio_callback(indata, frames, sd_time, status):
                 if status:
                     self.logger.warning(f"立体声混音状态: {status}")
                 
                 if self._recording and len(indata) > 0:
+                    if self._system_first_time is None:
+                        try:
+                            self._system_first_time = time.perf_counter()
+                        except Exception:
+                            self._system_first_time = None
                     # 处理系统音频
                     if indata.shape[1] > 1:
                         system_audio = np.mean(indata, axis=1).astype(np.float32)
@@ -311,7 +321,7 @@ class EnhancedWASAPIRecorder:
         try:
             import sounddevice as sd
             
-            def mic_callback(indata, frames, time, status):
+            def mic_callback(indata, frames, sd_time, status):
                 if status:
                     self.logger.warning(f"麦克风状态: {status}")
                 
@@ -424,14 +434,24 @@ class EnhancedWASAPIRecorder:
             # 计算实际起始偏移：以“mic 首帧”与“system 首帧”的到达时间差为准
             prepend_frames = 0
             try:
+                # A) 时钟差法
+                offset_sec_time = None
                 if self._mic_first_time is not None and self._system_first_time is not None:
-                    offset_sec = max(0.0, self._system_first_time - self._mic_first_time)
-                    prepend_frames = int(round(offset_sec * sample_rate))
-                    self.logger.info(f"SYS 偏移(相对MIC): offset_sec={offset_sec:.6f}, prepend_frames={prepend_frames}")
+                    offset_sec_time = max(0.0, self._system_first_time - self._mic_first_time)
                 elif self._start_time_monotonic is not None and self._system_first_time is not None:
-                    offset_sec = max(0.0, self._system_first_time - self._start_time_monotonic)
-                    prepend_frames = int(round(offset_sec * sample_rate))
-                    self.logger.info(f"SYS 偏移(相对START): offset_sec={offset_sec:.6f}, prepend_frames={prepend_frames}")
+                    offset_sec_time = max(0.0, self._system_first_time - self._start_time_monotonic)
+                # B) 时长差法（严格以 mic 为基准）
+                mic_secs = (len(self.recording_mic_data) / float(sample_rate)) if self.recording_mic_data else 0.0
+                sys_secs = (len(sys_arr) / float(sample_rate)) if sys_arr.size > 0 else 0.0
+                offset_sec_len = max(0.0, mic_secs - sys_secs)
+                # 选择偏移：优先时长差（与需求一致），并打印对比
+                if offset_sec_time is not None:
+                    self.logger.info(f"SYS 偏移候选: len_based={offset_sec_len:.6f}s, time_based={offset_sec_time:.6f}s")
+                else:
+                    self.logger.info(f"SYS 偏移候选: len_based={offset_sec_len:.6f}s (无时间戳)")
+                offset_sec = offset_sec_len
+                prepend_frames = int(round(offset_sec * sample_rate))
+                self.logger.info(f"SYS 采用偏移: offset_sec={offset_sec:.6f}, prepend_frames={prepend_frames}")
             except Exception as e:
                 self.logger.info(f"SYS 偏移计算失败: {e}")
                 prepend_frames = 0
